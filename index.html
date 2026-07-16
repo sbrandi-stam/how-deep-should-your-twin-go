@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Depth Selector — How deep should your twin go?</title>
+<style>
+  :root{
+    --navy:#203860;
+    --navy-deep:#16283f;
+    --blue:#B8D0E8;
+    --blue-soft:#E4EDF6;
+    --yellow:#F4C430;
+    --bg:#F7F9FC;
+    --card:#FFFFFF;
+    --ink:#1d2a3d;
+    --muted:#5b6b82;
+    --line:#d5e0ec;
+    --risk:#b3541e;
+    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans:"IBM Plex Sans", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto;} *{transition:none !important;} }
+  body{background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; font-size:15px;}
+  .wrap{max-width:1340px; margin:0 auto; padding:0 20px 80px;}
+
+  /* ---------- two-column layout with live viz ---------- */
+  .layout{display:grid; grid-template-columns:minmax(0,1fr) minmax(540px,620px); gap:30px; align-items:start;}
+  .vizpanel{position:sticky; top:14px; margin-top:44px;}
+  .vizcard{background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; box-shadow:0 18px 42px rgba(22,40,63,.13),0 2px 8px rgba(22,40,63,.08);}
+  .viztitle{font-family:var(--mono); font-size:12.5px; letter-spacing:.1em; color:#fff; background:var(--navy); padding:11px 16px; border-bottom:3px solid var(--yellow); display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .viztitle span{white-space:nowrap;}
+  .viztitle small{color:var(--blue); font-size:9px; letter-spacing:.12em; font-weight:400; white-space:nowrap;}
+  .viztitle .slash{color:var(--yellow);}
+  #viz3d{position:relative; isolation:isolate; width:100%; height:720px; background:radial-gradient(circle at 48% 32%,#fff 0%,#eef5fb 47%,#dfe9f3 100%); cursor:grab; overflow:hidden; outline:none;}
+  #viz3d::before{content:""; position:absolute; z-index:-1; inset:56% -15% -18%; pointer-events:none; opacity:.42; background-image:linear-gradient(rgba(32,56,96,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(32,56,96,.12) 1px,transparent 1px); background-size:28px 28px; transform:perspective(280px) rotateX(64deg) scale(1.3); transform-origin:center top; mask-image:linear-gradient(to bottom,#000,transparent 78%);}
+  #viz3d:active{cursor:grabbing;}
+  #viz3d canvas{display:block;}
+  .v3label{position:absolute; z-index:4; font-family:var(--mono); font-size:9.5px; letter-spacing:.035em; color:var(--navy-deep); background:rgba(255,255,255,.94); border:1px solid rgba(32,56,96,.22); border-left:3px solid var(--navy); padding:4px 7px; border-radius:4px; box-shadow:0 4px 12px rgba(22,40,63,.12); pointer-events:none; transform:translate(-50%,-120%); white-space:nowrap; transition:opacity .15s,transform .15s;}
+  .v3label[data-el="hvac"]{border-left-color:#397eb8}.v3label[data-el="tes"]{border-left-color:var(--yellow)}.v3label[data-el="elec"]{border-left-color:#6378a8}.v3label[data-el="occ"]{border-left-color:#c99116}
+  .viztools{position:absolute; z-index:6; top:12px; right:12px; display:flex; gap:5px; padding:5px; border:1px solid rgba(32,56,96,.16); border-radius:7px; background:rgba(255,255,255,.88); box-shadow:0 5px 18px rgba(22,40,63,.1); backdrop-filter:blur(8px); cursor:default;}
+  .viztool{border:1px solid var(--line); background:#fff; color:var(--navy); border-radius:4px; min-width:34px; height:28px; padding:0 8px; font:600 9.5px/1 var(--mono); letter-spacing:.055em; cursor:pointer;}
+  .viztool:hover,.viztool[aria-pressed="true"]{background:var(--navy); color:#fff; border-color:var(--navy);}
+  .viztool:focus-visible{outline:3px solid var(--yellow); outline-offset:1px;}
+  .vizmeta{position:absolute; z-index:5; left:12px; top:12px; display:flex; flex-direction:column; gap:3px; pointer-events:none;}
+  .vizmeta span{width:max-content; padding:3px 7px; border-radius:3px; background:rgba(32,56,96,.88); color:#fff; font:9px/1.25 var(--mono); letter-spacing:.07em;}
+  .vizmeta span:last-child{background:rgba(255,255,255,.9); color:var(--muted); border:1px solid rgba(32,56,96,.14);}
+  .vizselection{--sel:var(--navy); position:absolute; z-index:7; left:12px; top:66px; width:min(285px,calc(100% - 24px)); padding:9px 11px 10px 13px; border:1px solid rgba(32,56,96,.16); border-left:4px solid var(--sel); border-radius:6px; background:rgba(255,255,255,.94); box-shadow:0 8px 24px rgba(22,40,63,.14); backdrop-filter:blur(10px); pointer-events:none; opacity:0; transform:translateY(-5px); transition:opacity .18s,transform .18s;}
+  .vizselection.show{opacity:1;transform:translateY(0)}
+  .vizselection[data-el="hvac"]{--sel:#18a7c5}.vizselection[data-el="tes"]{--sel:#edae21}.vizselection[data-el="elec"]{--sel:#6c63c7}.vizselection[data-el="occ"]{--sel:#df5d78}
+  .vizselection .sk{display:block; color:var(--muted); font:9px/1.2 var(--mono); letter-spacing:.1em; text-transform:uppercase;}
+  .vizselection .sv{display:block; margin-top:4px; color:var(--navy-deep); font:600 12px/1.3 var(--mono);}
+  .bimlegend{position:absolute; z-index:6; left:50%; bottom:12px; transform:translateX(-50%); display:flex; gap:5px; padding:5px; border:1px solid rgba(32,56,96,.14); border-radius:8px; background:rgba(255,255,255,.9); box-shadow:0 6px 22px rgba(22,40,63,.11); backdrop-filter:blur(9px); cursor:default;}
+  .bimkey{--key:#6d8296; display:flex; align-items:center; gap:5px; border:0; border-radius:4px; padding:6px 7px; background:transparent; color:var(--muted); font:600 8.5px/1 var(--mono); letter-spacing:.045em; cursor:pointer; white-space:nowrap;}
+  .bimkey::before{content:""; width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:var(--key); box-shadow:0 0 0 3px color-mix(in srgb,var(--key) 16%,transparent);}
+  .bimkey strong{display:inline-grid; place-items:center; min-width:22px; height:17px; margin-left:1px; border-radius:3px; background:color-mix(in srgb,var(--key) 14%,#fff); color:var(--key); font:700 8.5px/1 var(--mono);}
+  .bimkey:hover,.bimkey:focus-visible{background:#fff; color:var(--navy-deep); box-shadow:0 2px 8px rgba(22,40,63,.12); outline:none;}
+  .bimkey[data-el="hvac"]{--key:#18a7c5}.bimkey[data-el="tes"]{--key:#edae21}.bimkey[data-el="elec"]{--key:#6c63c7}.bimkey[data-el="occ"]{--key:#df5d78}
+  .vizcap{font-size:11.5px; color:var(--muted); padding:11px 16px 13px; border-top:1px solid var(--line); font-family:var(--mono); min-height:42px; background:linear-gradient(180deg,#fff,#f8fafc);}
+  body.viz-open{overflow:hidden;}
+  body.viz-open::after{content:""; position:fixed; inset:0; z-index:90; background:rgba(10,23,40,.72); backdrop-filter:blur(4px);}
+  body.viz-open .vizpanel{z-index:100;}
+  .vizcard.expanded{position:fixed; z-index:100; inset:4vh 5vw; width:auto; height:92vh; display:grid; grid-template-rows:auto minmax(0,1fr) auto; border-color:rgba(255,255,255,.35); box-shadow:0 30px 90px rgba(0,0,0,.38);}
+  .vizcard.expanded #viz3d{height:auto; min-height:0;}
+  @media(max-width:1020px){
+    .layout{grid-template-columns:1fr;}
+    .vizpanel{position:static; order:-1; margin-top:32px;}
+    #viz3d{height:min(68vw,560px); min-height:420px;}
+  }
+  @media(max-width:560px){#viz3d{height:430px;min-height:0}.viztitle small,.vizmeta{display:none}.viztools{top:8px;right:8px}.vizselection{top:50px;left:8px;width:245px}.vizcard.expanded{inset:2vh 3vw;height:96vh}.bimlegend{bottom:8px}.bimkey{font-size:0;padding:7px}.bimkey::before{width:9px;height:9px;flex-basis:9px}.bimkey strong{font-size:8px}}
+
+  /* ---------- header ---------- */
+  header{background:var(--navy); color:#fff; padding:42px 20px 46px; border-bottom:4px solid var(--yellow);}
+  .hwrap{max-width:1340px; margin:0 auto; display:flex; justify-content:space-between; align-items:flex-start; gap:24px;}
+  .htext{min-width:0;}
+  .hlogo{flex:0 0 auto; text-align:right;}
+  .hlogo img{display:block; width:190px; height:auto;}
+  @media(max-width:640px){ .hlogo img{width:158px;} }
+  @media(max-width:640px){ .hwrap{flex-direction:column-reverse; align-items:flex-start;} .hlogo{text-align:left;} }
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.14em; color:var(--blue); text-transform:uppercase; margin-bottom:14px;}
+  h1{font-family:var(--mono); font-weight:600; font-size:clamp(21px,3.4vw,30px); line-height:1.25; color:#fff;}
+  h1 .slash{color:var(--yellow);}
+  .sub{max-width:640px; margin-top:14px; color:#dbe6f2; font-size:15px;}
+  .sub b{color:var(--yellow); font-weight:600;}
+
+  /* ---------- section titles ---------- */
+  .step{font-family:var(--mono); font-size:12px; letter-spacing:.12em; color:var(--navy); background:var(--blue-soft); border:1px solid var(--blue); display:inline-block; padding:3px 10px; border-radius:3px; margin-bottom:10px;}
+  h2{font-size:20px; color:var(--navy-deep); margin-bottom:4px;}
+  .lead{color:var(--muted); font-size:14px; max-width:640px;}
+  section{margin-top:44px;}
+
+  /* ---------- system selector ---------- */
+  .selgrid{display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px;}
+  @media(max-width:720px){ .selgrid{grid-template-columns:1fr;} }
+  .selcard{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:18px;}
+  .selcard h3{font-family:var(--mono); font-size:13px; letter-spacing:.06em; color:var(--navy); margin-bottom:12px; text-transform:uppercase;}
+  .optrow{display:flex; flex-wrap:wrap; gap:8px;}
+  .opt{border:1.5px solid var(--line); background:#fff; border-radius:6px; padding:8px 12px; font-size:13.5px; cursor:pointer; color:var(--ink); transition:border-color .15s, background .15s; font-family:var(--sans);}
+  .opt:hover{border-color:var(--navy);}
+  .opt:focus-visible{outline:3px solid var(--yellow); outline-offset:2px;}
+  .opt.sel{border-color:var(--navy); background:var(--navy); color:#fff; box-shadow:inset 0 -3px 0 var(--yellow);}
+
+  /* ---------- element cards ---------- */
+  .elcard{background:var(--card); border:1px solid var(--line); border-radius:8px; margin-top:22px; overflow:hidden;}
+  .elhead{padding:16px 20px 14px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap;}
+  .elname{font-family:var(--mono); font-size:15px; font-weight:600; color:var(--navy-deep);}
+  .elname .idx{color:var(--yellow); background:var(--navy); border-radius:3px; padding:1px 7px; margin-right:9px; font-size:12px;}
+  .elq{font-size:13px; color:var(--muted); font-style:italic;}
+
+  /* depth gauge tabs */
+  .gauge{display:grid; grid-template-columns:repeat(3,1fr); gap:0; border-bottom:1px solid var(--line);}
+  .gbtn{position:relative; border:none; background:var(--blue-soft); padding:13px 10px 15px; cursor:pointer; font-family:var(--mono); font-size:12.5px; color:var(--navy); border-right:1px solid var(--line); transition:background .15s;}
+  .gbtn:last-child{border-right:none;}
+  .gbtn:hover{background:var(--blue);}
+  .gbtn:focus-visible{outline:3px solid var(--yellow); outline-offset:-3px; z-index:1;}
+  .gbtn .lv{display:block; font-weight:600; font-size:12px; letter-spacing:.08em;}
+  .gbtn .nm{display:block; font-size:11.5px; margin-top:3px; color:var(--muted); font-family:var(--sans);}
+  .gbtn.sel{background:var(--navy); color:#fff;}
+  .gbtn.sel .nm{color:var(--blue);}
+  .gbtn.sel::after{content:""; position:absolute; left:0; right:0; bottom:0; height:4px; background:var(--yellow);}
+  .depthbar{display:inline-flex; gap:3px; margin-top:7px;}
+  .seg{width:16px; height:6px; background:#c7d6e6; border-radius:1px;}
+  .gbtn.sel .seg.on{background:var(--yellow);}
+  .gbtn:not(.sel) .seg.on{background:var(--navy);}
+
+  /* level content */
+  .lvbody{padding:18px 20px 20px;}
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media(max-width:720px){ .cols{grid-template-columns:1fr;} }
+  .col h4{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:7px;}
+  .col ul{list-style:none;}
+  .col li{padding-left:16px; position:relative; margin-bottom:7px; font-size:13.5px;}
+  .pros li::before{content:"+"; position:absolute; left:0; color:var(--navy); font-family:var(--mono); font-weight:600;}
+  .cons li::before{content:"–"; position:absolute; left:0; color:var(--risk); font-family:var(--mono); font-weight:600;}
+  .evid{margin-top:16px; border-top:1px dashed var(--line); padding-top:13px;}
+  .evid h4{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:8px;}
+  .evitem{font-size:13.5px; margin-bottom:8px; padding-left:16px; position:relative;}
+  .evitem::before{content:"§"; position:absolute; left:0; color:var(--blue); font-family:var(--mono);}
+  .fddnote{margin-top:12px; font-size:12.5px; color:var(--muted); font-style:italic;}
+  .fddnote b{color:var(--navy); font-style:normal; font-family:var(--mono); font-size:11px; letter-spacing:.08em;}
+
+  /* evidence chips */
+  .chip{display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.06em; padding:1px 6px; border-radius:3px; vertical-align:1px; margin-left:4px; white-space:nowrap;}
+  .c-fieldop{background:var(--navy); color:#fff;}
+  .c-fieldtest{background:var(--navy); color:var(--blue); border:1px solid var(--navy);}
+  .c-lab{background:var(--blue); color:var(--navy-deep);}
+  .c-sim{background:#fff; color:var(--navy); border:1px solid var(--blue);}
+  .c-review{background:#eef2f7; color:var(--muted); border:1px solid var(--line);}
+  .c-industry{background:#f3ead3; color:#7a5c14; border:1px solid #e0cf9a;}
+  .c-hyp{background:#fff; color:#7a5c14; border:1px dashed var(--yellow);}
+  .c-ver{background:var(--yellow); color:var(--navy-deep);}
+  .ref{font-family:var(--mono); font-size:11px; color:var(--navy); text-decoration:none; border-bottom:1px dotted var(--blue); cursor:pointer;}
+  .ref:hover{color:#000; border-bottom-color:var(--navy);}
+
+  /* system modifier callouts */
+  .mod{margin-top:14px; border-left:4px solid var(--yellow); background:#fdf8e9; padding:10px 14px; font-size:13.5px; border-radius:0 6px 6px 0; display:none;}
+  .mod.show{display:block;}
+  .mod .mtag{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#7a5c14; display:block; margin-bottom:3px;}
+  .mod.riskmod{border-left-color:var(--risk); background:#faf0e8;}
+  .mod.riskmod .mtag{color:var(--risk);}
+
+  /* summary */
+  .summary{background:var(--navy); color:#fff; border-radius:8px; margin-top:48px; padding:24px 24px 26px; border-bottom:4px solid var(--yellow);}
+  .summary h2{color:#fff; font-family:var(--mono); font-size:17px; margin-bottom:4px;}
+  .summary h2 .slash{color:var(--yellow);}
+  .summary .lead{color:var(--blue);}
+  .sumgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-top:18px;}
+  .sumcell{background:rgba(255,255,255,.06); border:1px solid rgba(184,208,232,.35); border-radius:6px; padding:11px 12px;}
+  .sumcell .k{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--blue); text-transform:uppercase;}
+  .sumcell .v{font-family:var(--mono); font-size:13px; margin-top:5px; color:#fff;}
+  .sumcell .v em{color:var(--yellow); font-style:normal;}
+  .warnings{margin-top:16px;}
+  .warn{font-size:13.5px; padding:8px 12px; border-radius:5px; margin-top:8px; background:rgba(244,196,48,.12); border:1px solid rgba(244,196,48,.5);}
+  .warn.hi{background:rgba(230,120,60,.15); border-color:rgba(230,120,60,.6);}
+  .warn .wtag{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; margin-right:8px; color:var(--yellow);}
+  .warn.hi .wtag{color:#f0a070;}
+
+  /* footer blocks */
+  details{background:var(--card); border:1px solid var(--line); border-radius:8px; margin-top:18px;}
+  details summary{cursor:pointer; padding:14px 18px; font-family:var(--mono); font-size:13px; color:var(--navy); list-style:none;}
+  details summary::before{content:"▸ "; color:var(--yellow);}
+  details[open] summary::before{content:"▾ ";}
+  details summary:focus-visible{outline:3px solid var(--yellow); outline-offset:-3px;}
+  .dbody{padding:2px 20px 18px; font-size:13px; color:var(--ink);}
+  .dbody p{margin-bottom:9px;}
+  .dbody .rid{font-family:var(--mono); color:var(--navy); font-weight:600;}
+  .gaps{margin-top:26px; border-left:4px solid var(--blue); background:var(--blue-soft); padding:14px 18px; border-radius:0 8px 8px 0;}
+  .gaps h3{font-family:var(--mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--navy); margin-bottom:8px;}
+  .gaps p{font-size:13px; margin-bottom:7px;}
+  .foot{margin-top:34px; font-size:12px; color:var(--muted); border-top:1px solid var(--line); padding-top:14px; font-family:var(--mono);}
+  .foot .slash{color:var(--yellow);}
+
+  /* ---------- verdict panel ---------- */
+  .goalsrow{margin-top:16px; display:flex; flex-wrap:wrap; align-items:center; gap:9px;}
+  .goalfixed{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:#fff; background:rgba(184,208,232,.14); border:1px solid rgba(184,208,232,.5); padding:5px 11px; border-radius:4px; white-space:nowrap;}
+  .goalbtn{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--blue); background:transparent; border:1px dashed rgba(184,208,232,.55); padding:5px 11px; border-radius:4px; cursor:pointer; transition:all .15s; white-space:nowrap;}
+  .goalbtn:hover{border-style:solid; color:#fff;}
+  .goalbtn:focus-visible{outline:2px solid var(--yellow); outline-offset:2px;}
+  .goalbtn[aria-pressed="true"]{background:var(--yellow); border:1px solid var(--yellow); color:var(--navy-deep); font-weight:600;}
+  .goalnote{font-size:11px; color:#93a7c0; font-family:var(--mono); flex-basis:100%;}
+  .badge.split{border-style:dashed;}
+
+  .verdictline{margin-top:16px; font-family:var(--mono); font-size:13px; padding:11px 14px; border-radius:6px; background:rgba(255,255,255,.07); border:1px solid rgba(184,208,232,.35); line-height:1.55;}
+  .verdictline .vu{color:#f0a070;} .verdictline .vf{color:#B8D0E8;} .verdictline .vb{color:var(--yellow);}
+  .badge{display:inline-block; font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; padding:1px 7px; border-radius:3px; margin-left:6px; vertical-align:1px; white-space:nowrap;}
+  .b-fit{background:rgba(184,208,232,.16); color:#B8D0E8; border:1px solid rgba(184,208,232,.55);}
+  .b-under{background:rgba(230,120,60,.16); color:#f0a070; border:1px solid rgba(230,120,60,.6);}
+  .b-beyond{background:rgba(244,196,48,.13); color:var(--yellow); border:1px solid rgba(244,196,48,.5);}
+  .sumcell .why{font-size:11.5px; color:#c9d6e6; margin-top:6px; line-height:1.45;}
+  .sumcell .why .ref{color:var(--yellow); border-bottom:1px dotted rgba(244,196,48,.5);}
+  .answers{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px;}
+  @media(max-width:720px){ .answers{grid-template-columns:1fr;} }
+  .ansCol{background:rgba(255,255,255,.05); border:1px solid rgba(184,208,232,.3); border-radius:6px; padding:13px 15px;}
+  .ansCol h4{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--blue); text-transform:uppercase; margin-bottom:9px;}
+  .ansCol ul{list-style:none; margin:0; padding:0;}
+  .ansCol li{font-size:13px; padding-left:18px; position:relative; margin-bottom:8px;}
+  .ansCol.can li::before{content:"\2713"; position:absolute; left:0; color:#B8D0E8; font-family:var(--mono);}
+  .ansCol.cant li::before{content:"\2717"; position:absolute; left:0; color:#f0a070; font-family:var(--mono);}
+  .ansCol li small{display:block; color:#93a7c0; font-size:11px; margin-top:1px;}
+  .ansCol li small .ref{color:var(--yellow); border-bottom:1px dotted rgba(244,196,48,.5);}
+  .reqs{margin-top:14px; font-size:12.5px; color:#c9d6e6; background:rgba(255,255,255,.05); border:1px solid rgba(184,208,232,.3); border-radius:6px; padding:12px 15px; line-height:1.6;}
+  .reqs b{color:#fff; font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; margin-right:6px;}
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hwrap">
+    <div class="htext">
+      <div class="eyebrow">Digital twins in buildings · working tool</div>
+      <h1><span class="slash">//</span> HOW DEEP SHOULD YOUR TWIN GO?</h1>
+      <p class="sub">A digital twin that closes the loop for energy ends in <b>supervisory control</b>: the model computes setpoints, the building executes, measurements flow back. Once the output is fixed, model depth stops being a matter of taste. Pick your system, then choose a depth level for each element — every tip carries its evidence and its limits.</p>
+    </div>
+    <div class="hlogo">
+      <!-- LOGO SLOT: replace with the official STAM logo (base64 <img>) before publishing -->
+      <svg width="150" height="40" viewBox="0 0 150 40" role="img" aria-label="STAM — Mastering Excellence">
+        <text x="0" y="27" style="font-family:ui-monospace,Menlo,Consolas,monospace" font-size="28" font-weight="700" letter-spacing="4" fill="#FFFFFF">STAM</text>
+        <rect x="0" y="32" width="104" height="3" fill="#F4C430"/>
+        <text x="0" y="40" style="font-family:ui-monospace,Menlo,Consolas,monospace" font-size="6.5" letter-spacing="2.2" fill="#B8D0E8">MASTERING EXCELLENCE</text>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="layout">
+  <div class="controls">
+
+  <!-- STEP 0 -->
+  <section id="system">
+    <span class="step">STEP 0</span>
+    <h2>Your system</h2>
+    <p class="lead">These choices don't change the level definitions. They change which risks light up below. Modifiers marked <span class="chip c-hyp">HYP</span> are engineering hypotheses, not demonstrated results.</p>
+    <div class="selgrid">
+      <div class="selcard">
+        <h3>Emission system</h3>
+        <div class="optrow" role="group" aria-label="Emission system">
+          <button class="opt" data-axis="emission" data-val="tabs">High-inertia radiant / TABS</button>
+          <button class="opt" data-axis="emission" data-val="radiators">Hydronic radiators</button>
+          <button class="opt" data-axis="emission" data-val="air">All-air / VAV / fan-coil</button>
+        </div>
+      </div>
+      <div class="selcard">
+        <h3>Generation</h3>
+        <div class="optrow" role="group" aria-label="Generation">
+          <button class="opt" data-axis="generation" data-val="hp">Heat pump</button>
+          <button class="opt" data-axis="generation" data-val="boiler">Condensing boiler</button>
+          <button class="opt" data-axis="generation" data-val="hybrid">Hybrid / multi-carrier</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 1 -->
+  <section id="elements">
+    <span class="step">STEP 1</span>
+    <h2>Depth per element</h2>
+    <p class="lead">Five phenomena, three depths each. The selector describes the minimum depth likely to preserve decision validity for the supervisory loop — not a ranking of model quality. FDD needs are noted separately: they often invert.</p>
+    <div id="cards"></div>
+  </section>
+
+  </div><!-- /controls -->
+
+  <aside class="vizpanel" aria-label="Live building view">
+    <div class="vizcard">
+      <div class="viztitle"><span><span class="slash">//</span> LIVE VIEW</span><small>COMPACT SECTION BIM · 9 LEVELS</small></div>
+      <div id="viz3d" role="region" tabindex="0" aria-label="Interactive 3D cutaway building reacting to your depth choices">
+        <div class="vizmeta" aria-hidden="true"><span>BIM LAYERS / LIVE</span><span id="vizsystem">SYSTEM TYPES / UNSET</span></div>
+        <div class="vizselection" id="vizselection" aria-live="polite"></div>
+        <div class="viztools" role="toolbar" aria-label="3D view controls">
+          <button class="viztool" id="vizreset" type="button" title="Reset isometric view">ISO</button>
+          <button class="viztool" id="vizauto" type="button" title="Toggle automatic rotation" aria-pressed="false">AUTO</button>
+          <button class="viztool" id="vizdetail" type="button" title="Show technical systems and labels" aria-pressed="false">DETAIL</button>
+          <button class="viztool" id="vizexpand" type="button" title="Expand 3D view" aria-pressed="false">EXPAND</button>
+        </div>
+        <div class="bimlegend" aria-label="BIM system layers">
+          <button class="bimkey" type="button" data-el="env">ENVELOPE</button>
+          <button class="bimkey" type="button" data-el="hvac">HVAC</button>
+          <button class="bimkey" type="button" data-el="tes">STORAGE</button>
+          <button class="bimkey" type="button" data-el="elec">ELECTRICAL</button>
+          <button class="bimkey" type="button" data-el="occ">OCCUPANCY</button>
+        </div>
+      </div>
+      <div class="vizcap" id="vizcap">The building follows your choices. Hover a card to locate its element; click an element to jump to its card.</div>
+    </div>
+  </aside>
+
+  </div><!-- /layout -->
+
+  <!-- SUMMARY -->
+  <section>
+    <div class="summary" id="summary">
+      <h2><span class="slash">//</span> CONFIGURATION VERDICT</h2>
+      <p class="lead">The resolution of the decision sets the resolution of the model. Everything below is assessed against one application: supervisory control closing the loop.</p>
+      <div class="goalsrow" id="goalsrow">
+        <span class="goalfixed">OBJECTIVE · SUPERVISORY CONTROL</span>
+        <button class="goalbtn" id="goal-fdd" type="button" aria-pressed="false">+ FDD / COMMISSIONING</button>
+        <button class="goalbtn" id="goal-retrofit" type="button" aria-pressed="false">+ RETROFIT WHAT-IF</button>
+        <span class="goalnote">Adding objectives can redeem depth or expose new blind spots — it never erases one.</span>
+      </div>
+      <div class="verdictline" id="verdictline"></div>
+      <div class="sumgrid" id="sumgrid"></div>
+      <div class="answers">
+        <div class="ansCol can"><h4>This twin can answer</h4><ul id="canlist"></ul></div>
+        <div class="ansCol cant"><h4>This twin cannot answer</h4><ul id="cantlist"></ul></div>
+      </div>
+      <div class="reqs" id="reqs"></div>
+      <div class="warnings" id="warnings"></div>
+    </div>
+  </section>
+
+  <!-- GAPS -->
+  <div class="gaps">
+    <h3>Declared evidence gaps</h3>
+    <p>No controlled same-building comparison quantifies MPC benefit across TABS, radiators and all-air systems: the emission-system modifiers rest on juxtaposition of separate studies.</p>
+    <p>Thermal-storage evidence comes from residential water heaters and DHW tank tests, not central plant buffers.</p>
+    <p>Simulation studies (R2, R18) favor depth; a real test building (R4) decouples prediction accuracy from control performance. Presented here as context dependence, not a resolved contradiction.</p>
+    <p>Battery evidence (R6) comes from market-participation studies rather than building energy management.</p>
+  </div>
+
+  <!-- REFERENCES -->
+  <details id="refs">
+    <summary>References &amp; evidence labels</summary>
+    <div class="dbody" id="refbody"></div>
+  </details>
+
+  <p class="foot"><span class="slash">//</span> Working hypothesis, evidence-audited. FIELD-OP = occupied operational building · FIELD-TEST = real test building or short pilot · LAB = laboratory experiment · SIM = simulation · REVIEW = peer-reviewed review · INDUSTRY = industry-authored or commissioned · HYP = engineering hypothesis · VERIFIED = checked against the primary text.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ---------------- data ---------------- */
+const CHIP = {
+  "FIELD-OP":"c-fieldop","FIELD-TEST":"c-fieldtest","LAB":"c-lab","SIM":"c-sim",
+  "REVIEW":"c-review","INDUSTRY":"c-industry","HYP":"c-hyp","VERIFIED":"c-ver"
+};
+function chips(list){ return list.map(t=>`<span class="chip ${CHIP[t]||'c-sim'}">${t}</span>`).join(""); }
+function ref(id){ return `<a class="ref" href="#refs" onclick="document.getElementById('refs').open=true">${id}</a>`; }
+
+const ELEMENTS = [
+{
+  id:"env", name:"Envelope & Zones", q:"Where does the thermal dynamics the decision exploits actually live?",
+  levels:[
+    { nm:"Single-zone grey-box", short:"1-zone RC",
+      pros:["Low calibration and computational burden","Can be enough for price-driven load shifting when zone diversity is limited"],
+      cons:["Zone-level comfort and diversity are hidden","Aggregation error grows as gains, orientations and schedules diverge"],
+      evid:[
+        {t:`Counterweight: the controller order needed for best MPC performance can exceed typical grey/black-box orders ${chips(["SIM"])} ${ref("R2")}`},
+        {t:`A white-box controller used ~50% less energy than the best grey-box on a 12-zone office — result depends on model and plant assumptions ${chips(["SIM"])} ${ref("R18")}`}
+      ],
+      fdd:"Usually insufficient for component-level localization; aggregate residual-based anomaly detection may still work."
+    },
+    { nm:"Multi-zone grey-box", short:"multi-zone RC",
+      pros:["Zone comfort and diversity become explicit","Identification tractable through zone-wise estimation "+chips(["SIM"])+" "+ref("R3")],
+      cons:["Sensing and identification effort scale with zone count","Parameter identifiability and maintenance become real constraints"],
+      evid:[
+        {t:`Field-test counterweight: no significant correlation between prediction accuracy and control performance; explicit heat-emission physics mattered more than uniformly higher order ${chips(["FIELD-TEST","VERIFIED"])} ${ref("R4")} — small unoccupied test environment`}
+      ],
+      fdd:"Zone-level anomaly localization becomes possible; component faults still need plant instrumentation."
+    },
+    { nm:"Calibrated white-box BEM", short:"white-box BEM",
+      pros:["Most defensible when a retrofit changes the physics: past data cannot describe a building that no longer exists","Best simulated control performance when parameters and forecasts are accurate "+chips(["SIM"])+" "+ref("R2")+" "+ref("R18")],
+      cons:["High calibration and governance burden","Needs reduction or a surrogate for real-time optimization; dies without recalibration"],
+      evid:[],
+      fdd:"Can serve as whole-building reference model; component FDD still depends on instrumentation and fault identifiability."
+    }
+  ],
+  caveat:`Cross-cutting: the model has no concept of sensor position. A probe in direct solar radiation feeds the loop a point temperature the model reads as a volume. A simulation-based methodology on a real dwelling attributed ~7% savings to sensing-location optimization ${chips(["SIM"])} ${ref("R15")} — attribution per abstract; a pending audit note suggests a setpoint change was involved (full-text check open).`
+},
+{
+  id:"hvac", name:"HVAC — Generation & Distribution", q:"Which couplings does the optimizer actually move?",
+  levels:[
+    { nm:"Static efficiency maps", short:"constant COP / η",
+      pros:["Linear or convex optimization","Adequate when efficiency is nearly flat over the range the controller actually uses"],
+      cons:["Blind to part-load, source/sink temperatures, changing lift"],
+      evid:[
+        {t:`With a heat pump, high risk when optimization changes supply or storage temperatures ${chips(["FIELD-TEST"])} ${ref("R12")} ${chips(["SIM"])} ${ref("R13")}`}
+      ],
+      fdd:"Insufficient for component diagnosis; aggregate efficiency monitoring may still be possible."
+    },
+    { nm:"Quasi-dynamic component models", short:"T-dependent COP",
+      pros:["Captures the couplings supervisory decisions exploit, without a full plant model","Adaptive COP predictors keep the optimization tractable "+chips(["SIM"])+" "+ref("R16")],
+      cons:["Needs manufacturer data, field data or dedicated tests","Validity must hold over the range the optimizer explores"],
+      evid:[
+        {t:`Explicit heat-emission physics can matter more than uniformly increasing model order ${chips(["FIELD-TEST","VERIFIED"])} ${ref("R4")}`}
+      ],
+      fdd:"Component-level residuals become meaningful for the modeled equipment."
+    },
+    { nm:"White-box hydronic network", short:"valve-by-valve",
+      pros:["Exposes distribution constraints and losses invisible above","Observability for distribution-level FDD; commissioning analysis"],
+      cons:["As-built hydraulic data rarely exists; heavy to keep alive","The supervisory decision usually doesn't exploit this resolution"],
+      evid:[
+        {t:`Hydronic optimization ≈10 kWh/m²·year, payback &lt;5 years in typical retrofits — Danfoss-authored, peer-reviewed venue; never the sole justification ${chips(["INDUSTRY"])} ${ref("R5")}`},
+        {t:`Open question the tool leaves open: does hydronic detail belong in the online twin, in offline commissioning, or both?`}
+      ],
+      fdd:"This is FDD territory: where distribution faults become observable."
+    }
+  ]
+},
+{
+  id:"tes", name:"Thermal Storage", q:"How stratified is the real tank?",
+  levels:[
+    { nm:"One-node capacity", short:"1 node + losses",
+      pros:["Convex, trivial to identify","Lab MPC still cut costs 12.3–23.2% vs thermostatic control under time-of-use "+chips(["LAB","VERIFIED"])+" "+ref("R7")],
+      cons:["Cannot see stratification: state of charge systematically misjudged in stratified tanks"],
+      evid:[], fdd:"Aggregate loss monitoring only."
+    },
+    { nm:"Multi-node stratified", short:"3-node",
+      pros:["Same lab tests: 3-node MPC reached 31.2–42.5% cost reduction — roughly double the 1-node benefit "+chips(["LAB","VERIFIED"])+" "+ref("R7")],
+      cons:["Benefit is configuration-dependent: 2-node models did not consistently beat optimized 1-node; differences grow with stratification level "+chips(["LAB"])+" "+ref("R8")],
+      evid:[
+        {t:`The tank's physical stratification, not the designer's ambition, decides whether this level pays. Scope: residential water heaters / DHW tanks — extrapolation to plant buffers plausible, not demonstrated.`}
+      ],
+      fdd:"Layer-level sensing enables charge-anomaly detection."
+    },
+    { nm:"High-resolution / CFD", short:"CFD",
+      pros:["Tank design: inlet geometry, diffusers, offline stratification studies"],
+      cons:["Outside the online loop's needs","No source in the current evidence set shows incremental closed-loop benefit over multi-node"],
+      evid:[], fdd:"Design-stage tool, not an operational one."
+    }
+  ]
+},
+{
+  id:"elec", name:"Electrical Systems — PV & Battery", q:"Does the dispatch see what it costs the battery?",
+  levels:[
+    { nm:"Linear battery", short:"integrator + bounds",
+      pros:["LP/MILP friendly; standard in energy management"],
+      cons:["Low-fidelity control over-commits the battery relative to a physics-based benchmark, misjudging the revenue–degradation trade-off "+chips(["SIM","VERIFIED"])+" "+ref("R6")],
+      evid:[], fdd:"Capacity-fade trending only, if at all."
+    },
+    { nm:"Nonlinear η + degradation penalty", short:"penalty-aware",
+      pros:["A low-complexity MPC with a well-designed terminal penalty reproduced the high-fidelity controller's behavior "+chips(["SIM","VERIFIED"])+" "+ref("R6"),"You need the right degradation signal more than the electrochemical model"],
+      cons:["Penalty calibration needs degradation data or conservative assumptions","Evidence base is market-participation batteries, not building EMS — transfer is an inference "+chips(["HYP"])],
+      evid:[], fdd:"Degradation-aware residuals become possible."
+    },
+    { nm:"Electrochemical–thermal", short:"single-particle",
+      pros:["Cell-level safety, thermal constraints, degradation-aware trading at scale"],
+      cons:["Excessive for building EMS unless the objective depends on electrochemical states","No demonstrated incremental building-EMS benefit over a well-designed penalty model"],
+      evid:[], fdd:"Cell diagnostics, outside typical building scope."
+    }
+  ]
+},
+{
+  id:"occ", name:"Occupancy", q:"Measure it, or predict it?",
+  levels:[
+    { nm:"Fixed schedules", short:"standard profiles",
+      pros:["Low cost, easy deployment","Fit-for-purpose: lowest complexity that preserves validity for your question "+ref("R1")],
+      cons:["Major performance-error source in intermittently occupied or diverse-use buildings"],
+      evid:[{t:`Sufficiency of fixed schedules is a conditional design judgment, not a proven general claim.`}],
+      fdd:"Occupancy-related anomalies invisible."
+    },
+    { nm:"Measured occupancy as information", short:"measure, don't predict",
+      pros:["The documented value lives here: 20-month field test, 17.6% cooling savings (2023 season) via occupancy-based thermostat "+chips(["FIELD-OP","VERIFIED"])+" "+ref("R9"),"Community-scale simulation: 1–20% savings, strongly pattern- and setback-dependent "+chips(["SIM"])+" "+ref("R10")],
+      cons:["Same field study: false negatives, sleep-period comfort problems, extended summer-afternoon demand peaks "+chips(["FIELD-OP","VERIFIED"])+" "+ref("R9"),"Sensing cost, privacy and governance"],
+      evid:[], fdd:"Presence data doubles as a diagnostic input for schedule mismatch."
+    },
+    { nm:"Behavioral prediction", short:"predict individuals",
+      pros:["Conditional value: predictive cases with medium temperature bounds used ~20.8% less energy than reactive, keeping comfort "+chips(["SIM","VERIFIED"])+" "+ref("R11")],
+      cons:["At equal bounds, reactive occupancy control beat predictive "+chips(["SIM","VERIFIED"])+" "+ref("R11")+" — the wider bands, not the prediction alone, carry much of the gain","Realistic prediction errors degrade the comfort–energy trade-off vs the ideal-forecast studies "+chips(["SIM"])+" "+ref("R17")],
+      evid:[{t:`Tool stance: measure first; predict only when prediction changes a valuable anticipative decision and the comfort-risk trade-off is explicit.`}],
+      fdd:"Prediction residuals are noisy diagnostics at best."
+    }
+  ]
+}
+];
+
+/* system-type modifiers: shown inside cards + summary warnings */
+const MODS = {
+  emission:{
+    tabs:{
+      env:{lvl:null, cls:"", tag:"TABS / high-inertia selected · HYP", txt:`Long time constants make anticipative control especially relevant; the review evidence (mass activation → 30–50% lower peak load, review citing primary studies ${chips(["REVIEW"])} ${ref("R14")}) concerns peak reduction, not MPC value. Envelope depth and explicit heat-emission dynamics gain importance.`},
+      warn:{hi:false, txt:"TABS: raise Envelope & Zones priority; heat-emission physics is where fidelity pays (R4). [HYP on transfer]"}
+    },
+    radiators:{
+      hvac:{lvl:null, cls:"", tag:"Hydronic radiators selected · HYP", txt:`Supply temperature, flow, valve authority and emitter output interact. Flag distribution and return-temperature effects where the supervisory controller can actually influence them.`},
+      warn:{hi:false, txt:"Radiators: baseline guidance; watch distribution effects the controller can influence. [HYP]"}
+    },
+    air:{
+      occ:{lvl:1, cls:"", tag:"All-air / fast dynamics selected · HYP", txt:`Faster dynamics reduce the value of long thermal prediction horizons; measured occupancy and near-term disturbance information become relatively more important. No controlled same-building comparison across emission types exists.`},
+      warn:{hi:false, txt:"All-air: long-horizon thermal prediction is worth less; measured occupancy (Occupancy L2) is worth more. [HYP]"}
+    }
+  },
+  generation:{
+    hp:{
+      hvac:{lvl:0, cls:"riskmod", tag:"Heat pump selected · HIGH RISK at this level", txt:`7-day real-building demo: MPC cut costs ~40% (0.36→0.12 EUR/kWh) and improved grid support 13%, while average COP fell 7.6→6.0 as temperature lift grew ${chips(["FIELD-TEST","VERIFIED"])} ${ref("R12")}. The price signal can outweigh the efficiency loss — but only a model that sees the COP–lift coupling can tell you when it doesn't. Constant COP is not universally unusable; it is high risk when your actions materially change the lift.`},
+      warn:{hi:true, txt:"Heat pump + constant-COP HVAC model: HIGH RISK for load shifting when actions change temperature lift (R12, R13)."}
+    },
+    boiler:{
+      hvac:{lvl:null, cls:"", tag:"Condensing boiler selected · HYP, reference needed", txt:`Return temperature is the efficiency lever; distribution and return-temperature modeling gain relevance where those variables are controllable. Primary source still to be added — treat as engineering judgment.`},
+      warn:{hi:false, txt:"Condensing boiler: return-temperature and distribution modeling gain relevance. [HYP — reference needed]"}
+    },
+    hybrid:{
+      hvac:{lvl:null, cls:"", tag:"Hybrid / multi-carrier selected · HYP", txt:`The supervisory value lies in orchestrating carriers: model breadth and correct coupling constraints likely matter more than high detail in any single component. Architectural hypothesis, not a demonstrated quantitative result.`},
+      warn:{hi:false, txt:"Hybrid: breadth and coupling constraints over single-component depth. [HYP]"}
+    }
+  }
+};
+
+const REFS = [
+["R1","Gaetani, Hoes & Hensen (2016). Occupant behavior in building energy simulation: towards a fit-for-purpose modeling strategy. Energy and Buildings 121, 188–204. doi:10.1016/j.enbuild.2016.03.038"],
+["R2","Picard, Drgoňa, Kvasnica & Helsen (2017). Impact of the controller model complexity on MPC performance for buildings. Energy and Buildings 152, 739–751. [SIM]"],
+["R3","Arroyo, Spiessens & Helsen (2020). Identification of multi-zone grey-box building models for use in MPC. J. Building Performance Simulation 13(4). [SIM]"],
+["R4","Arroyo, Spiessens & Helsen (2022). Comparison of Model Complexities in Optimal Control Tested in a Real Thermally Activated Building System. Buildings 12(5), 539. [FIELD-TEST]"],
+["R5","Kolb & Osojnik — Danfoss (2019). Costs and benefits of optimizing hydronic performance. eceee Summer Study, peer-reviewed. [INDUSTRY — provenance verified]"],
+["R6","Cao, Lee, Subramanian & Zavala (2020). Multiscale MPC of battery systems for frequency regulation markets using physics-based models. J. Process Control. [SIM]"],
+["R7","Buechler, Goldin & Rajagopal (2024). Improving the Load Flexibility of Stratified Electric Water Heaters. IEEE Trans. Smart Grid 15. Figures verified in arXiv:2312.04102. [LAB]"],
+["R8","Hernández Hernández, Péan & Salom (2026). Simplified Grey-Box Models for Stratified Water Tanks in HVAC Systems. CLIMA 2025, LNCE 788. [LAB/model-validation]"],
+["R9","Pang et al. (2025). Long-term field testing of occupancy presence sensors in a single-family home. Energy and Buildings 328, 115161. [FIELD-OP — verified]"],
+["R10","Munankarmi, Maguire & Jin (2022). Occupancy-Based Controls for an All-Electric Residential Community in a Cold Climate. IEEE PES GM / OSTI 1908955. [SIM]"],
+["R11","Gluck et al. (2017). A Systematic Approach for Exploring Tradeoffs in Predictive HVAC Control Systems. arXiv:1705.02058. 20.8% figure verified in primary text. [SIM]"],
+["R12","Tomás, Lämmle & Pfafferott (2025). Demonstration and Evaluation of MPC for a Real-World Heat Pump System. Energies 18(6), 1434. [FIELD-TEST, 7 days — verified]"],
+["R13","Pieper et al. (2020). Comparison of COP estimation methods for large-scale heat pumps. Energy 205, 117994. [SIM; district-heating scale]"],
+["R14","Hesaraki & Huda (2022). Comparative review on radiant low-temperature heating and high-temperature cooling. Sust. Energy Technologies and Assessments 49. [REVIEW — 30–50% peak-load claim verified in review text]"],
+["R15","Seri, Arnesano, Keane & Revel (2021). Temperature Sensing Optimization for Home Thermostat Retrofit. Sensors 21(11), 3685. [SIM/case — attribution check pending]"],
+["R16","Rastegarpour, Scattolini & Ferrarini (2021). LTV-MPC with adaptive COP predictor for an air-to-water heat pump. J. Process Control 99. [SIM]"],
+["R17","Yang et al. (2021). The Impact of Occupancy Prediction Accuracy on MPC Performance. Building Simulation 2021. [SIM/virtual testbed]"],
+["R18","Picard et al. (2016). Comparison of MPC Performance Using Grey-Box and White-Box Controller Models. High Performance Buildings Conf., Purdue. [SIM — citation pending verification]"]
+];
+
+/* ---------------- state ---------------- */
+const state = { emission:"tabs", generation:"hp", levels:{env:1, hvac:1, tes:1, elec:0, occ:1}, goals:{fdd:false, retrofit:false} };
+
+/* ---------------- render ---------------- */
+function renderCards(){
+  const root = document.getElementById("cards");
+  root.innerHTML = "";
+  ELEMENTS.forEach((el, ei)=>{
+    const sel = state.levels[el.id];
+    const lv = el.levels[sel];
+    const card = document.createElement("div");
+    card.className = "elcard";
+    card.id = "card-"+el.id;
+    card.addEventListener("mouseenter", ()=>{ if(typeof setActive==="function") setActive(el.id); });
+    card.addEventListener("mouseleave", ()=>{ if(typeof setActive==="function") setActive(null); });
+    card.innerHTML = `
+      <div class="elhead">
+        <div class="elname"><span class="idx">${ei+1}</span>${el.name}</div>
+        <div class="elq">${el.q}</div>
+      </div>
+      <div class="gauge" role="tablist" aria-label="${el.name} depth">
+        ${el.levels.map((L,i)=>`
+          <button class="gbtn ${i===sel?'sel':''}" role="tab" aria-selected="${i===sel}" data-el="${el.id}" data-lv="${i}">
+            <span class="lv">L${i+1}</span>
+            <span class="nm">${L.nm}</span>
+            <span class="depthbar">${[0,1,2].map(s=>`<span class="seg ${s<=i?'on':''}"></span>`).join("")}</span>
+          </button>`).join("")}
+      </div>
+      <div class="lvbody">
+        <div class="cols">
+          <div class="col pros"><h4>What it buys</h4><ul>${lv.pros.map(p=>`<li>${p}</li>`).join("")}</ul></div>
+          <div class="col cons"><h4>What it costs</h4><ul>${lv.cons.map(c=>`<li>${c}</li>`).join("")}</ul></div>
+        </div>
+        ${lv.evid.length?`<div class="evid"><h4>Evidence notes</h4>${lv.evid.map(e=>`<div class="evitem">${e.t}</div>`).join("")}</div>`:""}
+        <div class="fddnote"><b>FDD</b> — ${lv.fdd}</div>
+        ${el.caveat && el.id==="env"?`<div class="evid"><h4>Sensor caveat (all levels)</h4><div class="evitem">${el.caveat}</div></div>`:""}
+        <div class="modslot" data-slot="${el.id}"></div>
+      </div>`;
+    root.appendChild(card);
+  });
+  root.querySelectorAll(".gbtn").forEach(b=>{
+    b.addEventListener("click", ()=>{ const id=b.dataset.el; state.levels[id]=+b.dataset.lv; renderCards(); renderMods(); renderSummary(); buildViz(); spotlight(id); });
+  });
+  renderMods();
+}
+
+function renderMods(){
+  document.querySelectorAll(".modslot").forEach(s=>s.innerHTML="");
+  ["emission","generation"].forEach(axis=>{
+    const val = state[axis];
+    if(!val) return;
+    const m = MODS[axis][val];
+    Object.keys(m).forEach(k=>{
+      if(k==="warn") return;
+      const cfg = m[k];
+      const slot = document.querySelector(`.modslot[data-slot="${k}"]`);
+      if(!slot) return;
+      const active = (cfg.lvl===null) || (state.levels[k]===cfg.lvl);
+      if(!active) return;
+      const d = document.createElement("div");
+      d.className = "mod show "+(cfg.cls||"");
+      d.innerHTML = `<span class="mtag">${cfg.tag}</span>${cfg.txt}`;
+      slot.appendChild(d);
+    });
+  });
+}
+
+/* ---------------- verdict engine (rule-based, evidence-labelled) ---------------- */
+function assess(){
+  const L=state.levels, G=state.goals, hpish=(state.generation==="hp"||state.generation==="hybrid");
+  /* per element: verdict for the fixed objective (supervisory control), then
+     per-additional-objective verdicts; the badge shows the worst case and the
+     why-line explains the split. Adding objectives never erases an UNDER. */
+  function merge(parts){
+    /* UNDER dominates (a blind spot is never erased by adding objectives);
+       otherwise FIT wins if ANY declared objective justifies the depth;
+       BEYOND only when the depth is beyond need for ALL declared objectives. */
+    const s = parts.some(p=>p.s==="UNDER") ? "UNDER"
+            : parts.some(p=>p.s==="FIT")   ? "FIT"
+            : "BEYOND";
+    const split = parts.length>1 && parts.some(p=>p.s!==parts[0].s);
+    const why = parts.length===1 ? parts[0].why
+      : parts.map(p=>`<em>${p.g}:</em> ${p.why}`).join("<br>");
+    return {s, why, split};
+  }
+  const out={};
+
+  /* ENV */
+  {
+    const parts=[];
+    parts.push(L.env===0
+      ? (state.emission==="tabs"
+          ? {g:"control", s:"UNDER", why:`high-inertia TABS is exploited through mass and zone dynamics; a single node is thin for this system [HYP]`}
+          : {g:"control", s:"FIT", why:`aggregate load shifting works; zone comfort stays invisible by construction [HYP]`})
+      : L.env===1
+      ? {g:"control", s:"FIT", why:`zone comfort becomes explicit; one identification problem per zone is the price ${ref("R3")}`}
+      : {g:"control", s:"BEYOND", why:`for control alone the calibration and upkeep outweigh the gain ${ref("R2")} ${ref("R4")}`});
+    if(G.retrofit) parts.push(L.env===2
+      ? {g:"retrofit what-if", s:"FIT", why:`the calibrated white-box is exactly what the intervention question requires`}
+      : {g:"retrofit what-if", s:"UNDER", why:`the intervention changes the physics; data from the past cannot describe a building that no longer exists — needs Envelope L3`});
+    out.env=merge(parts);
+  }
+  /* HVAC */
+  {
+    const parts=[];
+    parts.push(L.hvac===0
+      ? (hpish
+          ? {g:"control", s:"UNDER", why:`constant COP cannot see the COP–lift coupling that your setpoint moves change ${ref("R12")} ${ref("R13")}`}
+          : {g:"control", s:"FIT", why:`acceptable while efficiency stays nearly flat over the range the controller actually uses [HYP]`})
+      : L.hvac===1
+      ? {g:"control", s:"FIT", why:`captures the couplings the decision exploits; emission physics is where fidelity pays ${ref("R4")} ${ref("R16")}`}
+      : {g:"control", s:"BEYOND", why:`supervisory control rarely exploits valve-level resolution ${ref("R5")}`});
+    if(G.fdd) parts.push(L.hvac===0
+      ? {g:"FDD", s:"UNDER", why:`insufficient by construction for component diagnosis — needs at least HVAC L2`}
+      : L.hvac===1
+      ? {g:"FDD", s:"FIT", why:`component-level residuals become meaningful for the modeled equipment; distribution faults stay invisible`}
+      : {g:"FDD", s:"FIT", why:`this is FDD territory: the level where distribution faults become observable ${ref("R5")}`});
+    out.hvac=merge(parts);
+  }
+  /* TES */
+  {
+    const parts=[];
+    parts.push(L.tes===0
+      ? {g:"control", s:"FIT", why:`still delivers under time-of-use tariffs, but leaves roughly half the benefit on the table in stratified tanks ${ref("R7")}`}
+      : L.tes===1
+      ? {g:"control", s:"FIT", why:`roughly doubles the one-node benefit; the payoff depends on how stratified the real tank is ${ref("R7")} ${ref("R8")}`}
+      : {g:"control", s:"BEYOND", why:`no evidence of closed-loop benefit over multi-node; a tank-design tool, not an operational one ${ref("R8")}`});
+    if(G.fdd) parts.push(L.tes>=1
+      ? {g:"FDD", s:"FIT", why:`layer-level sensing enables charge-anomaly detection`}
+      : {g:"FDD", s:"UNDER", why:`aggregate loss monitoring only — charge anomalies need Storage L2`});
+    out.tes=merge(parts);
+  }
+  /* ELEC */
+  {
+    const parts=[];
+    parts.push(L.elec===0
+      ? {g:"control", s:"UNDER", why:`under aggressive price-chasing dispatch the revenue–degradation trade-off stays invisible and the battery gets over-committed ${ref("R6")}`}
+      : L.elec===1
+      ? {g:"control", s:"FIT", why:`a well-designed penalty reproduces high-fidelity behavior at low complexity ${ref("R6")}`}
+      : {g:"control", s:"BEYOND", why:`no demonstrated building-EMS gain over a penalty-aware model ${ref("R6")}`});
+    if(G.fdd) parts.push(L.elec>=1
+      ? {g:"FDD", s:"FIT", why:`degradation-aware residuals become possible`}
+      : {g:"FDD", s:"UNDER", why:`capacity-fade trending only, if at all — needs Electrical L2`});
+    out.elec=merge(parts);
+  }
+  /* OCC */
+  {
+    const parts=[];
+    parts.push(L.occ===0
+      ? {g:"control", s:"FIT", why:`legitimate when occupancy barely moves the decision; a known gap source in intermittently occupied buildings ${ref("R1")}`}
+      : L.occ===1
+      ? {g:"control", s:"FIT", why:`where the documented value lives: measured presence, used reactively or as a disturbance ${ref("R9")} ${ref("R10")}`}
+      : {g:"control", s:"BEYOND", why:`wins only with wider comfort bands; at equal bounds reactive control did better ${ref("R11")} ${ref("R17")}`});
+    if(G.fdd) parts.push(L.occ>=1
+      ? {g:"FDD", s:"FIT", why:`presence data doubles as a diagnostic input for schedule mismatch`}
+      : {g:"FDD", s:"UNDER", why:`occupancy-related anomalies stay invisible without measured presence`});
+    if(G.retrofit && L.occ===0) parts.push({g:"retrofit what-if", s:"FIT", why:`standard profiles are the accepted basis for scenario comparison [HYP]`});
+    out.occ=merge(parts);
+  }
+  return out;
+}
+function twinAnswers(){
+  const L=state.levels, hpish=(state.generation==="hp"||state.generation==="hybrid");
+  const can=[], cant=[];
+  if(hpish && L.hvac===0) cant.push([`Reliable load shifting with a heat pump`,`needs HVAC L2 ${ref("R12")}`]);
+  else can.push([`Price-driven load shifting on thermal mass and storage`,``]);
+  if(L.env>=1) can.push([`Zone-level comfort inside the optimization`,``]); else cant.push([`Zone-level comfort`,`needs Envelope L2`]);
+  if(L.tes>=1) can.push([`Storage charging that respects stratification`,``]); else cant.push([`Honest state of charge in stratified tanks`,`needs Storage L2 ${ref("R7")}`]);
+  if(L.elec>=1) can.push([`Battery dispatch that sees degradation`,``]); else cant.push([`Degradation-aware battery dispatch`,`needs Electrical L2 ${ref("R6")}`]);
+  if(L.occ>=1) can.push([`Occupancy-reactive setbacks`,``]); else cant.push([`Occupancy-reactive setbacks`,`needs Occupancy L2 ${ref("R9")}`]);
+  const gR=state.goals.retrofit?" — a declared objective":"";
+  const gF=state.goals.fdd?" — a declared objective":"";
+  if(L.env===2) can.push([`Retrofit what-if analysis`,``]); else cant.push([`Retrofit what-if analysis`,`needs a calibrated white-box Envelope (L3)${gR}`]);
+  if(L.hvac===2) can.push([`Distribution-level fault localization`,``]); else cant.push([`Component / distribution fault localization`,`needs HVAC L3${gF}`]);
+  if(state.goals.fdd && L.hvac>=1 && L.hvac<2) can.push([`Component-level fault residuals on modeled equipment`,``]);
+  return {can,cant};
+}
+function twinRequirements(){
+  const L=state.levels;
+  const data=["weeks of whole-building monitoring"];
+  if(L.env>=1) data.push("per-zone temperature sensing, one identification per zone");
+  if(L.env===2) data.push("full calibration dataset, geometry and envelope properties");
+  if(L.hvac>=1) data.push("manufacturer performance maps or short dedicated tests");
+  if(L.hvac===2) data.push("as-built hydraulic data (rarely available)");
+  if(L.tes>=1) data.push("multi-height tank temperature sensing");
+  if(L.elec>=1) data.push("degradation data or conservative penalty assumptions");
+  if(L.occ>=1) data.push("presence sensing and privacy governance");
+  const heavy=(L.env===2||L.hvac===2||L.elec===2);
+  const mild=(L.hvac>=1||L.elec>=1||L.tes>=1);
+  const opt = heavy? "nonlinear, co-simulation or surrogate likely" : mild? "mildly nonlinear, still tractable" : "LP / convex-friendly";
+  const white=[L.env,L.hvac,L.tes,L.elec].filter(v=>v===2).length;
+  const maint = white>=2? `high — ${white} white-box components to keep alive` : white===1? "moderate — 1 component needs a recalibration discipline" : "low — periodic grey-box recalibration";
+  return {data,opt,maint};
+}
+function renderSummary(){
+  const g = document.getElementById("sumgrid");
+  const names = {env:"Envelope & Zones", hvac:"HVAC", tes:"Storage", elec:"Electrical", occ:"Occupancy"};
+  const verdict = assess();
+  const counts={UNDER:0,FIT:0,BEYOND:0};
+  Object.values(verdict).forEach(v=>counts[v.s]++);
+  const vl=document.getElementById("verdictline");
+  if(vl){
+    const parts=[];
+    if(counts.UNDER) parts.push(`<span class="vu">${counts.UNDER} under-specified</span>`);
+    parts.push(`<span class="vf">${counts.FIT} fit</span>`);
+    if(counts.BEYOND) parts.push(`<span class="vb">${counts.BEYOND} beyond need</span>`);
+    const gl=["supervisory control"]; if(state.goals.fdd) gl.push("FDD"); if(state.goals.retrofit) gl.push("retrofit what-if");
+    const head = counts.UNDER? "Your twin has blind spots for the objectives you declared." : counts.BEYOND? "Your twin works, and part of its depth is not earning its keep." : "Your twin matches its declared objectives.";
+    vl.innerHTML = `Assessed against: <b>${gl.join(" + ")}</b>.&nbsp; ${head} &nbsp;·&nbsp; ${parts.join(" · ")}`;
+  }
+  g.innerHTML = Object.keys(state.levels).map(k=>{
+    const el = ELEMENTS.find(e=>e.id===k);
+    const lv = el.levels[state.levels[k]];
+    const v = verdict[k];
+    const bcls = (v.s==="UNDER"?"b-under":v.s==="BEYOND"?"b-beyond":"b-fit") + (v.split?" split":"");
+    return `<div class="sumcell"><span class="k">${names[k]}</span><div class="v">L${state.levels[k]+1} <em>·</em> ${lv.short}<span class="badge ${bcls}">${v.s==="BEYOND"?"BEYOND NEED":v.s}</span></div><div class="why">${v.why}</div></div>`;
+  }).join("") + `
+    <div class="sumcell"><span class="k">Emission</span><div class="v">${state.emission? {tabs:"TABS / radiant",radiators:"radiators",air:"all-air"}[state.emission] : "<em>—</em>"}</div></div>
+    <div class="sumcell"><span class="k">Generation</span><div class="v">${state.generation? {hp:"heat pump",boiler:"boiler",hybrid:"hybrid"}[state.generation] : "<em>—</em>"}</div></div>`;
+
+  const A=twinAnswers();
+  const canEl=document.getElementById("canlist"), cantEl=document.getElementById("cantlist");
+  if(canEl) canEl.innerHTML = A.can.map(a=>`<li>${a[0]}${a[1]?`<small>${a[1]}</small>`:""}</li>`).join("");
+  if(cantEl) cantEl.innerHTML = A.cant.map(a=>`<li>${a[0]}${a[1]?`<small>${a[1]}</small>`:""}</li>`).join("");
+
+  const R=twinRequirements();
+  const rq=document.getElementById("reqs");
+  if(rq) rq.innerHTML = `<b>Data it asks for</b> ${R.data.join("; ")}.<br><b>Optimization class</b> ${R.opt} [HYP].<br><b>Model upkeep</b> ${R.maint} [HYP].`;
+
+  const w = document.getElementById("warnings");
+  const out = [];
+  ["emission","generation"].forEach(axis=>{
+    const val = state[axis]; if(!val) return;
+    const m = MODS[axis][val];
+    /* risk warnings only when the risky level is actually selected */
+    let show = true;
+    Object.keys(m).forEach(k=>{
+      if(k==="warn") return;
+      if(m[k].lvl!==null && state.levels[k]!==m[k].lvl && m[k].cls==="riskmod") show=false;
+    });
+    if(m.warn && (show || !m.warn.hi)){
+      out.push(`<div class="warn ${m.warn.hi&&show?'hi':''}"><span class="wtag">${m.warn.hi&&show?'RISK':'NOTE'}</span>${m.warn.txt}</div>`);
+    }
+  });
+  if(!state.emission && !state.generation){
+    out.push(`<div class="warn"><span class="wtag">NOTE</span>Select your system in Step 0 to light up system-specific risks.</div>`);
+  }
+  w.innerHTML = out.join("");
+}
+
+function renderRefs(){
+  document.getElementById("refbody").innerHTML =
+    REFS.map(r=>`<p><span class="rid">${r[0]}</span> — ${r[1]}</p>`).join("") +
+    `<p style="margin-top:12px;color:var(--muted)">Excluded: ITG Dresden hydronic figures (vendor-channel provenance); community-battery 42% figure (microgrid context, not building EMS); Mahdavi &amp; Tahmasebi 2015 (conclusion not yet read in the primary text). Pending before publication: R7 journal citation, R18 primary text, R15 full-text attribution check.</p>`;
+}
+
+/* ---------------- 3D cutaway live view (three.js) ---------------- */
+const vizWrap = document.getElementById("viz3d");
+const vizCap = document.getElementById("vizcap");
+const NAVY=0x203860, BLUE=0xb8d0e8, YEL=0xf4c430, CONC=0xc9cdd1, SLAB=0xeceff3, TIMBER=0xd8c9a3, SLABEDGE=0xb9ab84, GLASS=0xcfe0ef;
+let scene, camera, renderer, root, groups={}, labelAnchors={}, labelEls={}, activeEl=null;
+let dragging=false, px=0, py=0, rotY=0.56, rotX=0.43, shownRotY=rotY, shownRotX=rotX;
+let camZoom=0.82, shownZoom=camZoom, autoRotate=false, detailMode=false, lastFrame=0, spotlightTimer=null, animating=false;
+
+function mat(color, opts={}){ return new THREE.MeshStandardMaterial(Object.assign({color:color, transparent:true, opacity:1, roughness:0.82, metalness:0.04}, opts)); }
+function edges(mesh, color=0x2a3a52, op=0.2){ const eg=new THREE.EdgesGeometry(mesh.geometry, 20);
+  const ln=new THREE.LineSegments(eg, new THREE.LineBasicMaterial({color:color, transparent:true, opacity:op}));
+  ln.position.copy(mesh.position); ln.rotation.copy(mesh.rotation); mesh.parent.add(ln); return ln; }
+function bx(g,w,h,d,x,y,z,m,ry=0,withEdges=true){ const me=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m.clone()); me.position.set(x,y,z); me.rotation.y=ry; me.castShadow=true; me.receiveShadow=true; g.add(me); if(withEdges) edges(me); return me; }
+function cyl(g,r,h,x,y,z,m,seg=20,rz=0,rx=0){ const me=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,seg), m.clone()); me.position.set(x,y,z); me.rotation.z=rz; me.rotation.x=rx; me.castShadow=true; me.receiveShadow=true; g.add(me); return me; }
+function fanIcon(g,x,y,z,r,color=NAVY){
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(r, Math.max(0.05,r*0.09), 8, 24), mat(color));
+  ring.rotation.x=Math.PI/2; ring.position.set(x,y,z); ring.castShadow=true; ring.receiveShadow=true; g.add(ring);
+  cyl(g, r*0.16, r*0.32, x,y,z, mat(color), 12);
+  for(let i=0;i<4;i++){ const a=i*Math.PI/2+0.32;
+    bx(g, r*0.82, 0.045, r*0.3, x+Math.cos(a)*r*0.42, y, z+Math.sin(a)*r*0.42, mat(0xeef2f7), a, false);
+  }
+}
+function personMesh(g,x,z,ghost){ const m = ghost? new THREE.MeshBasicMaterial({color:YEL, wireframe:true, transparent:true}) : mat(NAVY);
+  const b=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.34,1.25,10), m.clone()); b.castShadow=true; b.position.set(x,0.63,z); g.add(b);
+  const h=new THREE.Mesh(new THREE.SphereGeometry(0.3,12,10), m.clone()); h.castShadow=true; h.position.set(x,1.55,z); g.add(h); }
+
+function initViz(){
+  scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xe7eff7, 72, 155);
+  const W = vizWrap.clientWidth||500, H = vizWrap.clientHeight||540;
+  camera = new THREE.PerspectiveCamera(27, W/H, 0.1, 400);
+  renderer = new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:"high-performance"});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(W,H);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0xffffff,0);
+  vizWrap.appendChild(renderer.domElement);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x9aacbf, 1.05));
+  const dl=new THREE.DirectionalLight(0xfffdf7, 1.05); dl.position.set(34,58,26);
+  dl.castShadow = true;
+  dl.shadow.mapSize.width = 1536; dl.shadow.mapSize.height = 1536;
+  dl.shadow.camera.left=-26; dl.shadow.camera.right=26; dl.shadow.camera.top=26; dl.shadow.camera.bottom=-26;
+  dl.shadow.camera.near=1; dl.shadow.camera.far=130; dl.shadow.bias=-0.0015;
+  dl.target.position.set(0, FLN*FLH*0.4, 0); scene.add(dl.target); scene.add(dl);
+  const dl2=new THREE.DirectionalLight(0xdcecff, 0.38); dl2.position.set(-25,20,-30); scene.add(dl2);
+  const dl3=new THREE.DirectionalLight(0xffedbd, 0.24); dl3.position.set(5,10,35); scene.add(dl3);
+  root = new THREE.Group(); scene.add(root);
+  /* ground plate + soft shadow */
+  const gp=new THREE.Mesh(new THREE.BoxGeometry(64,0.34,48), mat(0xe8eef4,{opacity:0.76})); gp.position.y=-0.2; gp.receiveShadow=true; gp.castShadow=false; root.add(gp);
+  const sh=new THREE.Mesh(new THREE.CylinderGeometry(15,15,0.018,48), mat(0x8398af,{opacity:0.16})); sh.position.y=0.01; sh.receiveShadow=false; sh.castShadow=false; root.add(sh);
+  /* labels */
+  ["env","hvac","tes","elec","occ"].forEach(id=>{
+    const d=document.createElement("div"); d.className="v3label"; d.dataset.el=id; vizWrap.appendChild(d); labelEls[id]=d;
+  });
+  /* interactions */
+  const el=renderer.domElement;
+  el.addEventListener("webglcontextlost",e=>{e.preventDefault();},false);
+  el.addEventListener("webglcontextrestored",()=>recreateViz(),false);
+  el.addEventListener("pointerdown",e=>{dragging=true; autoRotate=false; syncAutoButton(); px=e.clientX; py=e.clientY; el.setPointerCapture&&el.setPointerCapture(e.pointerId);});
+  window.addEventListener("pointerup",()=>dragging=false);
+  window.addEventListener("pointermove",e=>{ if(!dragging) return;
+    rotY += (e.clientX-px)*0.009; rotX = Math.min(0.88, Math.max(0.16, rotX + (e.clientY-py)*0.0045));
+    px=e.clientX; py=e.clientY; });
+  el.addEventListener("wheel",e=>{ e.preventDefault(); camZoom = Math.min(1.42, Math.max(0.52, camZoom + e.deltaY*0.0008)); }, {passive:false});
+  const ray=new THREE.Raycaster(), mv=new THREE.Vector2();
+  function pick(e){ const r=el.getBoundingClientRect();
+    mv.x=((e.clientX-r.left)/r.width)*2-1; mv.y=-((e.clientY-r.top)/r.height)*2+1;
+    ray.setFromCamera(mv,camera);
+    const hits=ray.intersectObjects(Object.values(groups).flatMap(g=>g.children), true);
+    if(!hits.length) return null;
+    let o=hits[0].object; while(o && !o.userData.el) o=o.parent;
+    return o? o.userData.el : null; }
+  el.addEventListener("pointermove",e=>{ if(dragging) return; const id=pick(e); if(id!==activeEl) setActive(id); });
+  el.addEventListener("pointerleave",()=>setActive(null));
+  el.addEventListener("click",e=>{ const id=pick(e); if(id){ const c=document.getElementById("card-"+id); if(c) c.scrollIntoView({behavior:"smooth",block:"center"}); setActive(id);} });
+  vizWrap.addEventListener("keydown",e=>{
+    const keys=["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","+","=","-","r","R"];
+    if(!keys.includes(e.key)) return; e.preventDefault();
+    if(e.key==="ArrowLeft") rotY-=0.12; if(e.key==="ArrowRight") rotY+=0.12;
+    if(e.key==="ArrowUp") rotX=Math.max(0.16,rotX-0.07); if(e.key==="ArrowDown") rotX=Math.min(0.88,rotX+0.07);
+    if(e.key==="+"||e.key==="=") camZoom=Math.max(0.52,camZoom-0.08); if(e.key==="-") camZoom=Math.min(1.42,camZoom+0.08);
+    if(e.key==="r"||e.key==="R") resetView();
+  });
+  document.getElementById("vizreset").addEventListener("click",e=>{e.stopPropagation();resetView();});
+  document.getElementById("vizauto").addEventListener("click",e=>{e.stopPropagation();autoRotate=!autoRotate;syncAutoButton();});
+  document.getElementById("vizdetail").addEventListener("click",e=>{e.stopPropagation();detailMode=!detailMode;syncDetailButton();refreshActive();});
+  document.getElementById("vizexpand").addEventListener("click",e=>{e.stopPropagation();toggleExpanded();});
+  document.querySelector(".viztools").addEventListener("pointerdown",e=>e.stopPropagation());
+  document.querySelector(".bimlegend").addEventListener("pointerdown",e=>e.stopPropagation());
+  document.querySelectorAll(".bimkey").forEach(b=>{
+    const id=b.dataset.el;
+    b.addEventListener("mouseenter",()=>setActive(id));
+    b.addEventListener("mouseleave",()=>setActive(null));
+    b.addEventListener("focus",()=>setActive(id));
+    b.addEventListener("blur",()=>setActive(null));
+    b.addEventListener("click",()=>{const c=document.getElementById("card-"+id);if(c)c.scrollIntoView({behavior:"smooth",block:"center"});});
+  });
+  window.addEventListener("keydown",e=>{if(e.key==="Escape"&&document.querySelector(".vizcard").classList.contains("expanded")) toggleExpanded(false);});
+  if("ResizeObserver" in window) new ResizeObserver(resizeViz).observe(vizWrap); else window.addEventListener("resize",resizeViz);
+  requestAnimationFrame(()=>requestAnimationFrame(resizeViz));
+  window.addEventListener("load",resizeViz);
+  if(!animating){ animating=true; animate(); }
+}
+function recreateViz(){
+  try{ if(renderer){ renderer.dispose(); const dom=renderer.domElement; if(dom&&dom.parentNode) dom.parentNode.removeChild(dom); } }catch(e){}
+  Object.values(labelEls).forEach(d=>d&&d.remove());
+  labelEls={}; labelAnchors={}; groups={}; renderer=null;
+  buildViz();
+}
+function resizeViz(){
+  if(!renderer||!camera) return;
+  const w=Math.max(1,vizWrap.clientWidth), h=Math.max(1,vizWrap.clientHeight);
+  camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h);
+}
+function resetView(){ rotY=0.56; rotX=0.43; camZoom=0.82; autoRotate=false; syncAutoButton(); }
+function syncAutoButton(){ const b=document.getElementById("vizauto"); if(b) b.setAttribute("aria-pressed",String(autoRotate)); }
+function syncDetailButton(){
+  const b=document.getElementById("vizdetail"); if(!b) return;
+  b.setAttribute("aria-pressed",String(detailMode)); b.textContent=detailMode?"CLEAN":"DETAIL";
+  b.title=detailMode?"Return to clean architectural view":"Show technical systems and labels";
+}
+function toggleExpanded(force){
+  const card=document.querySelector(".vizcard"), btn=document.getElementById("vizexpand");
+  const on=force===undefined?!card.classList.contains("expanded"):force;
+  card.classList.toggle("expanded",on); document.body.classList.toggle("viz-open",on);
+  btn.setAttribute("aria-pressed",String(on)); btn.textContent=on?"CLOSE":"EXPAND"; btn.title=on?"Close expanded view":"Expand 3D view";
+  requestAnimationFrame(resizeViz);
+}
+function animate(now=0){
+  requestAnimationFrame(animate);
+  if(!renderer) return;
+  const dt=Math.min(32,now-lastFrame||16); lastFrame=now;
+  if(autoRotate&&!dragging) rotY+=dt*0.00016;
+  if(!reduceMotion){ for(const p of flowPipes){ const m=p.material&&p.material.emissiveMap; if(m) m.offset.y=(m.offset.y - dt*(p.userData.flowSpeed||0.0004))%1; } }
+  shownRotY+=(rotY-shownRotY)*0.12; shownRotX+=(rotX-shownRotX)*0.12; shownZoom+=(camZoom-shownZoom)*0.12;
+  root.rotation.y = shownRotY;
+  const R=88*shownZoom;
+  camera.position.set(0, Math.sin(shownRotX)*R+7, Math.cos(shownRotX)*R);
+  camera.lookAt(0, FLN*FLH*0.44, 0);
+  renderer.render(scene,camera);
+  /* project labels */
+  const r=renderer.domElement.getBoundingClientRect();
+  const projected=[];
+  Object.keys(labelAnchors).forEach(id=>{
+    const v=labelAnchors[id].clone().applyMatrix4(root.matrixWorld).project(camera);
+    const d=labelEls[id]; if(!d) return;
+    if(v.z>1){ d.style.display="none"; return; }
+    d.style.display="block";
+    projected.push({id,d,x:(v.x*0.5+0.5)*r.width,y:(-v.y*0.5+0.5)*r.height});
+  });
+  projected.sort((a,b)=>a.y-b.y);
+  for(let i=1;i<projected.length;i++){
+    const a=projected[i-1],b=projected[i];
+    if(Math.abs(a.x-b.x)<118&&b.y-a.y<27) b.y=a.y+27;
+  }
+  projected.forEach(p=>{p.d.style.left=p.x.toFixed(0)+"px";p.d.style.top=p.y.toFixed(0)+"px";});
+}
+
+/* ------- builders (state-dependent) ------- */
+const FLN=9, FLH=3, BX2=8, BZ2=6;
+const BIM={
+  shell:0xf3f5f7, slab:0xe7ebef, concrete:0xaeb8c4, frame:0x62758a,
+  glass:0x9fd8eb, dark:0x253b57, env:0x6f8fab, hvac:0x18a7c5,
+  hot:0xe77855, tes:0xedae21, elec:0x6c63c7, occ:0xdf5d78
+};
+const ROOF_Y=FLN*FLH;
+
+const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let flowPipes=[];
+/* one flow stripe texture: a soft bright band on black, cloned per pipe so travelling
+   pulses read as energy circulating the supervisory loop (setpoints out, measurements back) */
+const flowTex=(()=>{ const c=document.createElement("canvas"); c.width=4; c.height=64; const cc=c.getContext("2d");
+  const grd=cc.createLinearGradient(0,0,0,64);
+  grd.addColorStop(0,"#000"); grd.addColorStop(0.30,"#000"); grd.addColorStop(0.46,"#8fb8d8");
+  grd.addColorStop(0.5,"#ffffff"); grd.addColorStop(0.54,"#8fb8d8"); grd.addColorStop(0.70,"#000"); grd.addColorStop(1,"#000");
+  cc.fillStyle=grd; cc.fillRect(0,0,4,64);
+  const t=new THREE.Texture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.needsUpdate=true; return t; })();
+function pipe(g,a,b,r,color,opacity=1){
+  const va=new THREE.Vector3(...a), vb=new THREE.Vector3(...b), dir=vb.clone().sub(va), len=dir.length();
+  const me=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,12),mat(color,{opacity,roughness:0.42}));
+  me.position.copy(va.clone().add(vb).multiplyScalar(0.5));
+  me.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize());
+  me.castShadow=true; me.receiveShadow=true;
+  /* travelling flow pulse */
+  const em=flowTex.clone(); em.needsUpdate=true; em.wrapS=em.wrapT=THREE.RepeatWrapping;
+  em.repeat.set(1, Math.max(1, Math.round(len/1.7)));
+  em.offset.y=Math.random();
+  me.material.emissive=new THREE.Color(0xffffff);
+  me.material.emissiveMap=em;
+  me.material.emissiveIntensity=0.9;
+  me.userData.flow=true;
+  me.userData.flowSpeed=(0.00035+r*0.0016); /* thicker mains pulse a touch faster */
+  flowPipes.push(me);
+  g.add(me); return me;
+}
+function node(g,x,y,z,r,color){
+  const me=new THREE.Mesh(new THREE.SphereGeometry(r,14,10),mat(color,{roughness:0.38}));
+  me.position.set(x,y,z); me.castShadow=true; g.add(me); return me;
+}
+const BW=15,BD=10,XH=BW/2,ZH=BD/2;
+function floorPlate(g,y,isRoof=false){
+  const slab=bx(g,BW,isRoof?0.34:0.22,BD,0,y,0,mat(isRoof?0xdce3e9:BIM.slab,{roughness:0.9}),0,false);
+  edges(slab,isRoof?BIM.dark:BIM.frame,isRoof?0.32:0.17);
+  /* White section edge: the front façade is intentionally removed. */
+  bx(g,BW+0.06,isRoof?0.38:0.27,0.13,0,y,ZH+0.03,mat(0xffffff),0,false);
+}
+function addCompactSkin(g){
+  const glass=mat(BIM.glass,{opacity:0.22,roughness:0.15,metalness:0.03});
+  for(let f=0;f<FLN;f++){
+    const y=f*FLH+1.5;
+    bx(g,BW-0.35,2.44,0.055,0,y,-ZH-0.02,glass,0,false);
+    bx(g,0.055,2.44,BD-0.35,-XH-0.02,y,0,glass,0,false);
+    bx(g,0.055,2.44,BD*0.52,XH+0.02,y,-2.35,glass,0,false);
+    bx(g,BW-0.15,0.1,0.1,0,f*FLH+0.18,-ZH-0.05,mat(BIM.frame,{opacity:0.66}),0,false);
+    bx(g,0.1,0.1,BD-0.15,-XH-0.05,f*FLH+0.18,0,mat(BIM.frame,{opacity:0.66}),0,false);
+  }
+  [-5,-1.7,1.7,5].forEach(x=>bx(g,0.065,ROOF_Y-0.4,0.07,x,ROOF_Y/2,-ZH-0.06,mat(BIM.frame,{opacity:0.55}),0,false));
+  [-3.3,0,3.3].forEach(z=>bx(g,0.07,ROOF_Y-0.4,0.065,-XH-0.06,ROOF_Y/2,z,mat(BIM.frame,{opacity:0.55}),0,false));
+}
+function buildEnv(g){
+  const lv=state.levels.env;
+  bx(g,BW+10.5,0.28,BD+3.2,3.25,-0.16,0,mat(0xdce3e9,{opacity:0.88}),0,false);
+  /* A single strong section frame contains the entire composition. */
+  bx(g,0.12,ROOF_Y,0.14,-XH,ROOF_Y/2,ZH,mat(BIM.env),0,false);
+  bx(g,0.12,ROOF_Y,0.14,XH,ROOF_Y/2,ZH,mat(BIM.env),0,false);
+  bx(g,BW,0.14,0.14,0,ROOF_Y,ZH,mat(BIM.env),0,false);
+  if(lv===0){
+    /* L1: one thermal volume, deliberately without floors or internal parts. */
+    const volume=new THREE.Mesh(new THREE.BoxGeometry(BW-0.8,ROOF_Y-0.7,BD-0.8),mat(BIM.glass,{opacity:0.115,roughness:0.2}));
+    volume.position.set(0,ROOF_Y/2,-0.1);g.add(volume);edges(volume,BIM.env,0.52);
+    bx(g,BW-1.4,0.18,BD-1.4,0,0.08,-0.1,mat(BIM.env,{opacity:0.62}),0,false);
+  }else{
+    /* L2 and L3: explicit floor topology. */
+    for(let f=0;f<=FLN;f++)floorPlate(g,f*FLH,f===FLN);
+    for(let f=0;f<FLN;f++){
+      const y=f*FLH+1.47;
+      bx(g,6.2,2.2,7.8,-3.25,y,-0.2,mat(BIM.env,{opacity:0.06}),0,false);
+      bx(g,6.2,2.2,7.8,3.25,y,-0.2,mat(BIM.glass,{opacity:0.068}),0,false);
+      bx(g,0.075,2.24,7.7,0,y,-0.2,mat(BIM.env,{opacity:0.42}),0,false);
+    }
+  }
+  if(lv===2){
+    /* L3 white-box: structure, core, façade families, partitions and sensors. */
+    [[-5.6,-3.4],[0,-3.4],[5.6,-3.4],[-5.6,1.5],[0,1.5],[5.6,1.5]].forEach(([x,z])=>
+      bx(g,0.3,ROOF_Y-0.22,0.3,x,ROOF_Y/2,z,mat(BIM.concrete),0,false));
+    const core=bx(g,3.1,ROOF_Y-0.25,3.2,-4.2,ROOF_Y/2,-2.4,mat(0xb7c1ca,{roughness:0.94}),0,false);
+    edges(core,BIM.frame,0.22);addCompactSkin(g);
+    [1,3,5,7].forEach(f=>{
+      const y=f*FLH+1.45;
+      bx(g,5.7,2.28,0.065,-3.2,y,1.45,mat(BIM.env,{opacity:0.5}),0,false);
+      bx(g,0.065,2.28,3.4,2.4,y,-2.3,mat(BIM.env,{opacity:0.5}),0,false);
+      node(g,0.8,f*FLH+2.2,3.82,0.16,BIM.env);
+    });
+    bx(g,4.4,0.16,1.5,-2.3,2.58,ZH+0.7,mat(BIM.shell),0,false);
+    bx(g,0.14,2.5,0.14,-4.25,1.25,ZH+1.1,mat(BIM.frame),0,false);
+    bx(g,0.14,2.5,0.14,-0.35,1.25,ZH+1.1,mat(BIM.frame),0,false);
+  }
+  labelAnchors.env=new THREE.Vector3(-3.8,ROOF_Y+2.3,-1.7);
+}
+function buildHvac(g){
+  const lv=state.levels.hvac,GX=10.35,GZ=-2.15;
+  const genColor=state.generation==="boiler"?BIM.hot:state.generation==="hybrid"?BIM.tes:BIM.hvac;
+  if(lv===0){
+    /* L1: one external generation object and one aggregate energy link. */
+    bx(g,4.0,0.16,3.4,GX,0.08,GZ,mat(0xcfd7df),0,false);
+    bx(g,3.55,0.1,0.16,GX,0.24,GZ+1.6,mat(genColor),0,false);
+    if(state.generation==="hp"){
+      bx(g,3.35,2.25,2.55,GX,1.3,GZ,mat(0xf7f9fb),0,false);fanIcon(g,GX,1.35,GZ+1.31,0.72,BIM.hvac);
+    }else if(state.generation==="boiler"){
+      cyl(g,0.92,2.35,GX,1.3,GZ,mat(BIM.hot),20);pipe(g,[GX,2.45,GZ],[GX,4.1,GZ],0.17,BIM.dark);node(g,GX,4.18,GZ,0.24,BIM.dark);
+    }else if(state.generation==="hybrid"){
+      bx(g,1.75,1.8,1.45,GX-0.92,1.08,GZ,mat(0xf7f9fb),0,false);fanIcon(g,GX-0.92,1.1,GZ+0.76,0.43,BIM.hvac);
+      cyl(g,0.58,1.75,GX+1.05,1.0,GZ,mat(BIM.hot),18);pipe(g,[GX-0.15,0.65,GZ+0.82],[GX+0.95,0.65,GZ+0.82],0.1,BIM.tes);node(g,GX+0.35,0.65,GZ+0.82,0.17,BIM.tes);
+    }else{
+      bx(g,3.6,2.45,2.8,GX,1.4,GZ,mat(BIM.hvac,{opacity:0.88}),0,false);bx(g,2.45,0.18,0.12,GX,1.4,GZ+1.46,mat(0xffffff),0,false);
+    }
+    pipe(g,[GX-1.8,0.72,GZ],[7.7,0.72,GZ],0.105,genColor,0.82);pipe(g,[7.7,0.72,GZ],[5.65,0.72,3.85],0.105,genColor,0.82);
+    node(g,5.65,0.72,3.85,0.23,genColor);
+    labelAnchors.hvac=new THREE.Vector3(GX,4.8,GZ);return;
+  }
+  /* L2/L3: recognizable component families and temperature-dependent paths. */
+  bx(g,4.25,1.45,2.35,2.5,ROOF_Y+0.74,-2.4,mat(0xf5f7f9),0,false);
+  bx(g,3.85,0.1,1.98,2.5,ROOF_Y+1.5,-2.4,mat(BIM.concrete),0,false);
+  fanIcon(g,1.7,ROOF_Y+1.6,-2.4,0.5,BIM.hvac);fanIcon(g,3.3,ROOF_Y+1.6,-2.4,0.5,BIM.hvac);
+  bx(g,5.2,0.16,4.0,GX,0.08,GZ,mat(0xcfd7df),0,false);
+  bx(g,4.65,0.1,0.18,GX,0.24,GZ+2.02,mat(genColor),0,false);
+  bx(g,4.6,2.35,3.25,GX,1.3,GZ,mat(0xf4f6f8,{opacity:0.82}),0,false);
+  if(state.generation==="boiler"){
+    cyl(g,0.78,2.0,GX,1.12,GZ,mat(BIM.hot),20);pipe(g,[GX,2.1,GZ],[GX,4.0,GZ],0.15,BIM.dark);node(g,GX,4.08,GZ,0.21,BIM.dark);
+    bx(g,0.58,0.38,0.08,GX,1.25,GZ+1.66,mat(BIM.dark),0,false);node(g,GX,1.36,GZ+1.73,0.055,BIM.tes);
+  }else{
+    const off=state.generation==="hybrid"?-0.65:0;
+    bx(g,state.generation==="hybrid"?1.75:2.35,1.7,1.35,GX+off,1.1,GZ,mat(0xffffff),0,false);fanIcon(g,GX+off,1.14,GZ+0.7,state.generation==="hybrid"?0.4:0.52,BIM.hvac);
+    if(state.generation==="hybrid"){
+      cyl(g,0.56,1.62,GX+1.15,0.98,GZ,mat(BIM.hot),18);pipe(g,[GX+0.15,0.62,GZ+0.85],[GX+1.05,0.62,GZ+0.85],0.085,BIM.tes);node(g,GX+0.58,0.62,GZ+0.85,0.15,BIM.tes);
+    }
+  }
+  pipe(g,[5.65,0.45,3.85],[5.65,ROOF_Y-0.55,3.85],0.13,BIM.hvac);
+  pipe(g,[5.28,0.45,3.85],[5.28,ROOF_Y-0.55,3.85],0.1,BIM.hot);
+  const floors=lv===1?[1,4,7]:[1,2,3,4,5,6,7,8];
+  floors.forEach(f=>{
+    const y=f*FLH+2.28;pipe(g,[5.65,y,3.85],[-1.6,y,3.85],0.085,BIM.hvac);
+    if(lv===2){pipe(g,[5.28,y-0.28,3.55],[-1.6,y-0.28,3.55],0.055,BIM.hot);node(g,-1.6,y,3.85,0.17,0xffffff);}
+  });
+  pipe(g,[GX-2.3,0.7,GZ],[7.8,0.7,GZ],0.11,genColor);pipe(g,[7.8,0.7,GZ],[7.2,0.7,3.85],0.11,genColor);pipe(g,[7.2,0.7,3.85],[5.65,0.7,3.85],0.11,genColor);
+  const terminalFloors=lv===1?[1,4,7]:[1,2,3,4,5,6,7,8];
+  terminalFloors.forEach(f=>{
+    const y=f*FLH+0.32;
+    if(state.emission==="tabs"){
+      /* serpentine radiant loop embedded in the slab */
+      const zr=[-2.6,-1.5,-0.4,0.7], x0=-5.8, x1=3.7, rr=lv===2?0.036:0.046;
+      zr.forEach(z=>pipe(g,[x0,y,z],[x1,y,z],rr,BIM.hvac,0.85));
+      for(let i=0;i<zr.length-1;i++){const xe=(i%2===0)?x1:x0;pipe(g,[xe,y,zr[i]],[xe,y,zr[i+1]],rr,BIM.hvac,0.85);}
+      node(g,x0,y,zr[0],0.1,0xffffff);
+    } else if(state.emission==="radiators"){
+      [-4.2,0,4.2].forEach(x=>{
+        bx(g,1.4,0.66,0.14,x,y+0.44,4.68,mat(BIM.hot),0,false);
+        for(let fx=-0.55;fx<=0.56;fx+=0.16) bx(g,0.045,0.54,0.13,x+fx,y+0.44,4.68,mat(0xffffff,{opacity:0.55}),0,false);
+        pipe(g,[x-0.52,y+0.04,4.52],[x-0.52,y+0.44,4.52],0.045,BIM.hvac,0.9);
+        pipe(g,[x+0.52,y+0.04,4.52],[x+0.52,y+0.44,4.52],0.045,BIM.hot,0.9);
+        node(g,x-0.52,y+0.04,4.52,0.07,0xffffff);
+      });
+    } else if(state.emission==="air"){
+      bx(g,8.4,0.28,0.5,-0.4,y+2.0,2.8,mat(0xcfd9e4),0,false);
+      bx(g,8.4,0.1,0.14,-0.4,y+1.83,2.8,mat(BIM.hvac,{opacity:0.85}),0,false);
+      [-3.8,-1.4,1.0,3.4].forEach(x=>{
+        const c=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.24,0.34,12),mat(BIM.hvac));c.position.set(x,y+1.66,2.8);c.castShadow=true;g.add(c);
+        if(lv===2)node(g,x,y+1.88,2.8,0.09,0xffffff);
+      });
+    }
+  });
+  labelAnchors.hvac=new THREE.Vector3(GX,5.1,GZ);
+}
+function buildTes(g){
+  const lv=state.levels.tes,TX=10.35,TZ=2.65,H=4.65,r=0.92;
+  bx(g,2.7,0.16,2.7,TX,0.08,TZ,mat(0xcfd7df),0,false);
+  const colors=lv===0?[BIM.tes]:lv===1?[0xf5c75f,0xeeb23d,0x86c8dc]:[0xf8d878,0xf2c35b,0xedab31,0xc7c9a8,0x9fcdd8,0x75bfd4];
+  colors.forEach((c,i)=>cyl(g,r,H/colors.length,TX,H-H*(i+0.5)/colors.length,TZ,mat(c,{roughness:0.42}),22));
+  const top=new THREE.Mesh(new THREE.SphereGeometry(r,22,12,0,Math.PI*2,0,Math.PI/2),mat(colors[0]));top.position.set(TX,H,TZ);top.castShadow=true;g.add(top);
+  if(lv===1)[1.55,3.1].forEach(y=>{const ring=new THREE.Mesh(new THREE.TorusGeometry(r+0.02,0.04,6,26),mat(BIM.dark));ring.rotation.x=Math.PI/2;ring.position.set(TX,y,TZ);g.add(ring);node(g,TX+r+0.12,y,TZ,0.11,0xffffff);});
+  if(lv===2){
+    [0.78,1.55,2.32,3.1,3.88].forEach(y=>{const ring=new THREE.Mesh(new THREE.TorusGeometry(r+0.02,0.035,6,26),mat(BIM.dark));ring.rotation.x=Math.PI/2;ring.position.set(TX,y,TZ);g.add(ring);node(g,TX+r+0.14,y,TZ,0.1,0xffffff);});
+    pipe(g,[TX,0.4,TZ],[TX,H-0.2,TZ],0.055,BIM.hot,0.7);pipe(g,[TX-0.68,0.7,TZ],[TX-0.68,4.1,TZ],0.04,BIM.hvac,0.72);
+  }
+  pipe(g,[TX-0.95,0.72,TZ],[7.7,0.72,TZ],lv===0?0.12:0.085,BIM.hot);pipe(g,[7.7,0.72,TZ],[7.2,0.72,3.55],lv===0?0.12:0.085,BIM.hot);pipe(g,[7.2,0.72,3.55],[5.28,0.72,3.55],lv===0?0.12:0.085,BIM.hot);
+  labelAnchors.tes=new THREE.Vector3(TX,H+1.55,TZ);
+}
+function buildElec(g){
+  const lv=state.levels.elec;
+  const pvRows=lv===0?1:lv===1?2:2,pvCols=lv===0?1:lv===1?3:4,pw=lv===0?5.4:1.48;
+  for(let r=0;r<pvRows;r++)for(let c=0;c<pvCols;c++){
+    const p=bx(g,pw,0.07,lv===0?2.4:0.92,(c-(pvCols-1)/2)*(lv===0?0:1.78)-2.4,ROOF_Y+0.46,1.5+r*1.16,mat(0x355b87,{roughness:0.24,metalness:0.16}),0,false);p.rotation.x=-0.28;edges(p,0xa9c8df,0.4);
+  }
+  const EX=-5.6,EZ=3.7;bx(g,2.35,2.35,1.25,EX,1.25,EZ,mat(0xf4f6f8),0,false);bx(g,2.08,2.0,0.055,EX,1.25,EZ+0.65,mat(0xffffff),0,false);
+  const n=lv===0?1:lv===1?3:12;
+  for(let i=0;i<n;i++){const cols=lv===2?3:n,row=Math.floor(i/cols),col=i%cols,w=lv===0?1.5:0.5;bx(g,w,lv===2?0.32:1.12,0.065,EX+(col-(cols-1)/2)*0.61,lv===2?1.86-row*0.43:1.38,EZ+0.7,mat(BIM.elec),0,false);}
+  pipe(g,[EX+1.18,0.42,EZ],[-4.6,0.42,3.1],lv===0?0.1:0.07,BIM.elec);
+  if(lv>=1)pipe(g,[-4.6,0.42,3.1],[-4.6,ROOF_Y-0.6,3.1],0.06,BIM.elec);
+  if(lv===2){
+    bx(g,1.25,1.05,0.72,-3.65,1.0,3.2,mat(0xffffff),0,false);node(g,-3.65,1.0,3.58,0.11,BIM.elec);
+    [2,4,6,8].forEach(f=>{const y=f*FLH+1.95;pipe(g,[-4.6,y,3.1],[-2.6,y,3.1],0.04,BIM.elec);node(g,-2.6,y,3.1,0.1,0xffffff);});
+  }
+  labelAnchors.elec=new THREE.Vector3(EX,4.15,EZ);
+}
+function buildOcc(g){
+  const lv=state.levels.occ;
+  function zone(f,x,z,w,d,ghost=false){const m=ghost?new THREE.MeshBasicMaterial({color:BIM.occ,wireframe:true,transparent:true,opacity:0.72}):mat(BIM.occ,{opacity:0.115});const me=new THREE.Mesh(new THREE.BoxGeometry(w,2.14,d),m);me.position.set(x,f*FLH+1.45,z);g.add(me);}
+  if(lv===0){
+    /* L1: one schedule applied to the whole building, no spatial sensing. */
+    const schedule=new THREE.Mesh(new THREE.BoxGeometry(BW-1.2,ROOF_Y-1.0,BD-1.2),mat(BIM.occ,{opacity:0.055}));schedule.position.set(0,ROOF_Y/2,-0.2);g.add(schedule);
+  }else if(lv===1){
+    [[1,-3.2,1.8,5.3,3.8],[4,2.4,0,5.4,7.5],[7,-3,-1.7,5.5,3.9]].forEach(a=>zone(...a));
+    [[-2.2,3.7,1],[4.6,3.7,4],[-0.4,3.7,7]].forEach(([x,z,f])=>node(g,x,f*FLH+2.1,z,0.18,BIM.occ));
+    personMesh(g,-2.0,3.9,false);personMesh(g,0.2,3.7,false);
+  }else{
+    /* L3: one explicit occupancy/prediction box per floor when floor topology exists. */
+    if(state.levels.env>0){
+      /* per-floor measured presence vs predicted (ghost) occupancy, linked by a prediction spine */
+      const spine=[];
+      for(let f=0;f<FLN;f++){
+        const y=f*FLH+1.45, side=f%2===0?-1:1, x=side*2.6;
+        zone(f,x,-0.2,4.7,4.9,false);        /* measured presence zone */
+        zone(f,-x*0.7,0.5,3.1,3.5,true);      /* predicted (ghost) zone */
+        node(g,x,y+0.66,3.72,0.15,BIM.occ);   /* presence sensor */
+        spine.push([0.2,f*FLH+2.0,3.9]);
+      }
+      for(let i=1;i<spine.length;i++)pipe(g,spine[i-1],spine[i],0.032,BIM.occ,0.62);
+    }else{
+      const predicted=new THREE.Mesh(new THREE.BoxGeometry(BW-1.1,ROOF_Y-1.0,BD-1.1),new THREE.MeshBasicMaterial({color:BIM.occ,wireframe:true,transparent:true,opacity:0.52}));
+      predicted.position.set(0,ROOF_Y/2,-0.2);g.add(predicted);
+    }
+    personMesh(g,-2.0,3.9,false);personMesh(g,0.2,3.7,true);
+  }
+  labelAnchors.occ=new THREE.Vector3(0.3,1.0,5.8);
+}
+
+function buildViz(){
+  if(!renderer){ initViz(); }
+  flowPipes=[];
+  Object.values(groups).forEach(g=>{
+    g.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){ if(o.material.emissiveMap) o.material.emissiveMap.dispose(); o.material.dispose(); } });
+    root.remove(g);
+  });
+  groups={};
+  [["env",buildEnv],["hvac",buildHvac],["tes",buildTes],["elec",buildElec],["occ",buildOcc]].forEach(([id,fn])=>{
+    const g=new THREE.Group(); g.userData.el=id;
+    g.traverse(o=>o.userData.el=id);
+    fn(g);
+    g.traverse(o=>o.userData.el=id);
+    root.add(g); groups[id]=g;
+  });
+  refreshLabels();
+  refreshActive();
+}
+function refreshLabels(){
+  const names={env:["1 NODE","MULTI-ZONE","WHITE-BOX"], hvac:["STATIC MAPS","T-DEP COP","HYDRONIC NET"], tes:["1 NODE","3-NODE STRAT","HI-RES"], elec:["LINEAR","η+PENALTY","ELECTROCHEM"], occ:["SCHEDULES","MEASURED","PREDICTED"]};
+  const tags={env:"ENV",hvac:"HVAC",tes:"TES",elec:"ELEC",occ:"OCC"};
+  Object.keys(labelEls).forEach(id=>{ labelEls[id].textContent = `${tags[id]} L${state.levels[id]+1} · ${names[id][state.levels[id]]}`; });
+  document.querySelectorAll(".bimkey").forEach(b=>{
+    const id=b.dataset.el, level=state.levels[id]+1, el=ELEMENTS.find(e=>e.id===id), choice=el.levels[state.levels[id]].nm;
+    const label={env:"ENVELOPE",hvac:"HVAC",tes:"STORAGE",elec:"ELECTRICAL",occ:"OCCUPANCY"}[id];
+    b.innerHTML=`<span>${label}</span><strong>L${level}</strong>`;
+    b.title=`${el.name}: L${level} — ${choice}`;
+    b.setAttribute("aria-label",`${el.name}, level ${level}: ${choice}`);
+  });
+  const sys=document.getElementById("vizsystem");
+  if(sys){
+    const em=state.emission?{tabs:"TABS",radiators:"RADIATORS",air:"ALL-AIR"}[state.emission]:"EMISSION —";
+    const gen=state.generation?{hp:"HEAT PUMP",boiler:"BOILER",hybrid:"HYBRID"}[state.generation]:"GENERATION —";
+    sys.textContent=`${em} · ${gen}`;
+  }
+}
+function setActive(id){ if(id==="env") id=null; activeEl=id; refreshActive(); }
+function spotlight(id){
+  if(spotlightTimer) clearTimeout(spotlightTimer);
+  setActive(id);
+  spotlightTimer=setTimeout(()=>{if(activeEl===id)setActive(null);spotlightTimer=null;},1900);
+}
+function refreshActive(){
+  Object.keys(groups).forEach(gid=>{
+    const on = gid===activeEl;
+    groups[gid].traverse(o=>{
+      if(!o.material) return;
+      if(o.userData.baseOp===undefined) o.userData.baseOp=o.material.opacity;
+      if(o.material.emissive!==undefined && !o.userData.flow) o.material.emissive.setHex(on? 0x8a6a00 : 0x000000);
+      if(o.userData.flow) o.material.emissiveIntensity = (activeEl && !on)? 0.12 : 0.9;
+      if(activeEl){
+        o.material.opacity = on?o.userData.baseOp:Math.max(0.05,o.userData.baseOp*0.18);
+      } else if(!detailMode && gid!=="env"){
+        o.material.opacity = o.userData.baseOp*0.74;
+      } else {
+        o.material.opacity = o.userData.baseOp;
+      }
+    });
+    if(labelEls[gid]){
+      const show=detailMode||on;
+      labelEls[gid].style.opacity=show?1:0;
+      labelEls[gid].style.transform=show?"translate(-50%,-120%)":"translate(-50%,-105%)";
+    }
+  });
+  if(activeEl){
+    const el=ELEMENTS.find(e=>e.id===activeEl);
+    vizCap.textContent = `${el.name} — L${state.levels[activeEl]+1} · ${el.levels[state.levels[activeEl]].nm}`;
+  } else if(detailMode){
+    vizCap.textContent = "Technical view — all systems and labels are visible. Click CLEAN to return to the architectural overview.";
+  } else {
+    vizCap.textContent = "Clean view — hover a card or click a system to isolate it. Use DETAIL to reveal the complete technical overlay.";
+  }
+  const selection=document.getElementById("vizselection");
+  if(selection){
+    selection.classList.toggle("show",!!activeEl);
+    if(activeEl){
+      const el=ELEMENTS.find(e=>e.id===activeEl), level=state.levels[activeEl]+1;
+      selection.dataset.el=activeEl;
+      selection.innerHTML=`<span class="sk">${el.name} · selected depth</span><span class="sv">L${level} — ${el.levels[state.levels[activeEl]].nm}</span>`;
+    }
+  }
+}
+
+document.querySelectorAll(".opt").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    const axis=b.dataset.axis, val=b.dataset.val;
+    state[axis] = (state[axis]===val)? null : val;
+    document.querySelectorAll(`.opt[data-axis="${axis}"]`).forEach(x=>x.classList.toggle("sel", x.dataset.val===state[axis]));
+    renderMods(); renderSummary(); buildViz();
+    const tgt={tabs:"env",radiators:"hvac",air:"occ",hp:"hvac",boiler:"hvac",hybrid:"hvac"}[val]||"hvac";
+    if(state[axis]) spotlight(tgt);
+  });
+});
+
+[["goal-fdd","fdd"],["goal-retrofit","retrofit"]].forEach(([bid,key])=>{
+  const b=document.getElementById(bid); if(!b) return;
+  b.addEventListener("click", ()=>{
+    state.goals[key]=!state.goals[key];
+    b.setAttribute("aria-pressed", String(state.goals[key]));
+    renderSummary();
+  });
+});
+
+document.querySelectorAll(".opt").forEach(x=>x.classList.toggle("sel", state[x.dataset.axis]===x.dataset.val));
+renderCards(); renderSummary(); renderRefs(); buildViz();
+</script>
+
+
+
+</body></html>
